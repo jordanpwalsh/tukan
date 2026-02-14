@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/jordan/devel/personal/tukan log --oneline -10)",
+      "Bash(git config:*)",
+      "WebSearch",
+      "Bash(bun init:*)",
+      "Bash(npm init:*)"
+    ]
+  }
+}
