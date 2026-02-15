@@ -5,7 +5,12 @@
       "Bash(git config:*)",
       "WebSearch",
       "Bash(bun init:*)",
-      "Bash(npm init:*)"
+      "Bash(npm init:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:term.ink)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(npx vitest run)"
     ]
   }
 }

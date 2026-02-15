@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "tsx src/index.ts",
+    "start": "tsx src/index.tsx",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
@@ -29,8 +29,13 @@
   "homepage": "https://github.com/jordanpwalsh/tukan#readme",
   "devDependencies": {
     "@types/node": "^25.2.3",
+    "@types/react": "^19.2.14",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "ink": "^6.7.0",
+    "react": "^19.2.4"
   }
 }
