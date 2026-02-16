@@ -5,6 +5,7 @@ export interface SessionState {
   workingDir: string;
   lastChangeTimes?: Record<string, number>; // windowId → epoch ms
   activeWindows?: string[]; // windowIds with unseen activity
+  paneHashes?: Record<string, string>; // paneId → content hash
 }
 
 export interface TukanState {

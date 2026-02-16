@@ -112,8 +112,9 @@ describe("deriveBoard", () => {
     const columns = deriveBoard(server, defaultConfig());
 
     expect(columns[0].cards).toHaveLength(2);
-    expect(columns[0].cards[0].sessionName).toBe("dev");
-    expect(columns[0].cards[1].sessionName).toBe("ops");
+    // Cards are reversed (newest first) within each column
+    expect(columns[0].cards[0].sessionName).toBe("ops");
+    expect(columns[0].cards[1].sessionName).toBe("dev");
   });
 
   it("shows unstarted cards (no windowId) in their column", () => {

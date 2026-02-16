@@ -28,8 +28,7 @@ export interface NewWindowOpts {
   sessionName: string;
   name: string;
   dir: string;
-  command: "shell" | "claude" | "custom";
-  customCommand?: string;
+  commandTemplate: string;
   description?: string;
   acceptanceCriteria?: string;
 }
@@ -78,14 +77,14 @@ function appendEnvVars(args: string[], opts: NewWindowOpts): void {
 
 function appendCommand(args: string[], opts: NewWindowOpts): void {
   appendEnvVars(args, opts);
-  if (opts.command === "claude") {
-    const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
-    if (prompt) {
-      args.push("claude", prompt);
+  if (opts.commandTemplate) {
+    if (opts.commandTemplate === "claude") {
+      // Special handling: append prompt from description
+      const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
+      args.push("claude", ...(prompt ? [prompt] : []));
     } else {
-      args.push("claude");
+      args.push(opts.commandTemplate);
     }
-  } else if (opts.command === "custom" && opts.customCommand) {
-    args.push(opts.customCommand);
   }
+  // empty template = default shell (no command appended)
 }

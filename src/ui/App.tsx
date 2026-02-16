@@ -4,6 +4,7 @@ import { Board } from "./Board.js";
 import { StatusBar } from "./StatusBar.js";
 import { NewCardModal } from "./NewCardModal.js";
 import { QuickShellModal } from "./QuickShellModal.js";
+import { SettingsModal } from "./SettingsModal.js";
 import type { FormValues } from "./NewCardModal.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { deriveBoard } from "../board/derive.js";
@@ -20,16 +21,31 @@ const execFileAsync = promisify(execFile);
 import { randomUUID } from "node:crypto";
 import type { TmuxServer } from "../tmux/types.js";
 import type { SessionState } from "../state/types.js";
-import { COL_UNASSIGNED, COL_TODO, COL_IN_PROGRESS, COL_REVIEW, COL_DONE, type BoardConfig, type BoardCard, type Card, type Cursor } from "../board/types.js";
+import { COL_UNASSIGNED, COL_TODO, COL_IN_PROGRESS, COL_REVIEW, COL_DONE, DEFAULT_COMMANDS, type BoardConfig, type BoardCard, type BoardColumn, type Card, type CommandDef, type Cursor } from "../board/types.js";
+
+/** Find the cursor position of a card by ID in derived board columns */
+function findCardCursor(columns: BoardColumn[], cardId: string): Cursor | null {
+  for (let col = 0; col < columns.length; col++) {
+    for (let row = 0; row < columns[col].cards.length; row++) {
+      if (columns[col].cards[row].cardId === cardId) {
+        return { col, row };
+      }
+    }
+  }
+  return null;
+}
 
 type ModalState =
   | null
   | { mode: "create" }
   | { mode: "confirm-resolve"; card: BoardCard }
+  | { mode: "confirm-remove"; card: BoardCard }
   | { mode: "confirm-start"; card: BoardCard }
   | { mode: "start"; card: BoardCard }
   | { mode: "edit"; card: BoardCard }
-  | { mode: "quick-shell" };
+  | { mode: "quick-shell" }
+  | { mode: "settings" }
+  | { mode: "help" };
 
 interface AppProps {
   initialTmux: TmuxServer;
@@ -95,7 +111,11 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       times[windowId] = entry.lastChangeTime;
       if (entry.hasActivity) activeWins.push(windowId);
     }
-    onSave({ board: cfg, workingDir, lastChangeTimes: times, activeWindows: activeWins });
+    const hashes: Record<string, string> = {};
+    for (const [paneId, hash] of paneHashesRef.current) {
+      hashes[paneId] = hash;
+    }
+    onSave({ board: cfg, workingDir, lastChangeTimes: times, activeWindows: activeWins, paneHashes: hashes });
   }, [onSave, workingDir]);
 
   // Poll tmux state every second
@@ -146,11 +166,13 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         changed, paneToWindow, activeWindowId, activityRef.current, Date.now(),
       );
 
+      const hadNoHashes = paneHashesRef.current.size === 0;
+      paneHashesRef.current = nextHashes;
       setPaneHashes(nextHashes);
       setActivity(nextActivity);
 
-      // Persist on activity change
-      if (changed.size > 0) {
+      // Persist on activity change or when baseline hashes are first established
+      if (changed.size > 0 || (hadNoHashes && nextHashes.size > 0)) {
         saveState(configRef.current);
       }
 
@@ -211,6 +233,16 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         return;
       }
 
+      if (input === ",") {
+        setModal({ mode: "settings" });
+        return;
+      }
+
+      if (input === "?") {
+        setModal({ mode: "help" });
+        return;
+      }
+
       if (input === "s") {
         const bc = columns[cursor.col]?.cards[cursor.row];
         if (!bc) return;
@@ -226,10 +258,12 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
           // Live window: move to in-progress + switch
           const cfg = configRef.current;
           let newConfig: BoardConfig;
+          let movedCardId = bc.cardId;
 
           if (bc.uncategorized) {
             // Auto-create a Card record
             const id = randomUUID();
+            movedCardId = id;
             const newCard: Card = {
               id,
               name: bc.name,
@@ -254,16 +288,11 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
           }
           updateConfig(newConfig);
 
-          const result = resolveSwitchArgs(
-            { sessionName: bc.sessionName, windowId: bc.windowId! },
-            tmux,
-            process.env,
-          );
-          if (result.mode === "switch") {
-            execTmuxCommand(result.args);
-          } else if (result.mode === "attach") {
-            onAttach(result.args);
-            exit();
+          // Move cursor to the card in its new column
+          {
+            const newColumns = deriveBoard(tmux, newConfig, selfPaneId, activity);
+            const nc = findCardCursor(newColumns, movedCardId);
+            if (nc) setCursor(nc);
           }
         }
         return;
@@ -301,14 +330,25 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         setCursor((c) => moveUp(c));
       } else if (key.downArrow) {
         setCursor((c) => moveDown(c, columns));
-      } else if (input === "h") {
-        const result = moveCard(configRef.current, columns, cursor, "left", randomUUID);
-        if (result) {
-          updateConfig(result.config);
-          setCursor(result.cursor);
+      } else if (input === "h" || input === "l") {
+        const direction = input === "h" ? "left" as const : "right" as const;
+        const bc = columns[cursor.col]?.cards[cursor.row];
+        const targetColIdx = input === "h" ? cursor.col - 1 : cursor.col + 1;
+        const targetCol = columns[targetColIdx];
+
+        // Prompt before moving a live-window card into Done
+        if (bc?.windowId && targetCol?.id === COL_DONE) {
+          setModal({ mode: "confirm-resolve", card: bc });
+          return;
         }
-      } else if (input === "l") {
-        const result = moveCard(configRef.current, columns, cursor, "right", randomUUID);
+
+        // Prompt before moving an unstarted/closed card into In Progress
+        if (bc && !bc.windowId && !bc.uncategorized && targetCol?.id === COL_IN_PROGRESS) {
+          setModal({ mode: "confirm-start", card: bc });
+          return;
+        }
+
+        const result = moveCard(configRef.current, columns, cursor, direction, randomUUID);
         if (result) {
           updateConfig(result.config);
           setCursor(result.cursor);
@@ -345,7 +385,11 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       } else if (input === "r") {
         const bc = columns[cursor.col]?.cards[cursor.row];
         if (bc) {
-          setModal({ mode: "confirm-resolve", card: bc });
+          if (columns[cursor.col]?.id === COL_DONE) {
+            setModal({ mode: "confirm-remove", card: bc });
+          } else {
+            setModal({ mode: "confirm-resolve", card: bc });
+          }
         }
       }
     },
@@ -366,7 +410,6 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         sessionName: currentSessionName,
         dir: values.dir,
         command: values.command,
-        customCommand: values.command === "custom" ? values.customCommand : undefined,
         worktree: values.worktree,
         worktreePath: values.worktree ? values.worktreePath : undefined,
         createdAt: Date.now(),
@@ -384,9 +427,15 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         cards: { ...cfg.cards, [card.id]: card },
       };
       updateConfig(newConfig);
+
+      // Move cursor to the new card
+      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
+      const newCursor = findCardCursor(newColumns, card.id);
+      if (newCursor) setCursor(newCursor);
+
       setModal(null);
     },
-    [updateConfig, buildCardFromValues],
+    [updateConfig, buildCardFromValues, selfPaneId, setCursor],
   );
 
   const handleEdit = useCallback(
@@ -404,7 +453,6 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         acceptanceCriteria: values.acceptanceCriteria,
         dir: values.dir,
         command: values.command,
-        customCommand: values.command === "custom" ? values.customCommand : undefined,
         worktree: values.worktree,
         worktreePath: values.worktree ? values.worktreePath : undefined,
       };
@@ -424,9 +472,15 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       if (card.windowId) {
         getTmuxState(serverName, sessionName).then((t) => setTmux(t));
       }
+
+      // Keep cursor on the edited card
+      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
+      const newCursor = findCardCursor(newColumns, bc.cardId);
+      if (newCursor) setCursor(newCursor);
+
       setModal(null);
     },
-    [modal, serverName, sessionName, updateConfig],
+    [modal, serverName, sessionName, updateConfig, selfPaneId, setCursor],
   );
 
   const startCard = useCallback(
@@ -438,12 +492,16 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         dir = wt.worktreePath;
       }
 
+      // Look up command template from config
+      const commands = configRef.current.commands ?? DEFAULT_COMMANDS;
+      const cmdDef = commands.find((c) => c.id === card.command);
+      const commandTemplate = cmdDef?.template ?? "";
+
       const windowOpts = {
         sessionName: card.sessionName,
         name: sanitizeBranchName(card.name),
         dir,
-        command: card.command,
-        customCommand: card.command === "custom" ? card.customCommand : undefined,
+        commandTemplate,
         description: card.description,
         acceptanceCriteria: card.acceptanceCriteria,
       };
@@ -473,22 +531,15 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       updateConfig(newConfig);
       const newTmux = await getTmuxState(serverName, sessionName);
       setTmux(newTmux);
-      setModal(null);
 
-      // Switch to the new window
-      const result = resolveSwitchArgs(
-        { sessionName: card.sessionName, windowId: newWindowId },
-        newTmux,
-        process.env,
-      );
-      if (result.mode === "switch") {
-        await execTmuxCommand(result.args);
-      } else if (result.mode === "attach") {
-        onAttach(result.args);
-        exit();
-      }
+      // Move cursor to the card in its new column
+      const newColumns = deriveBoard(newTmux, newConfig, selfPaneId, activityRef.current);
+      const newCursor = findCardCursor(newColumns, card.id);
+      if (newCursor) setCursor(newCursor);
+
+      setModal(null);
     },
-    [tmux, serverName, sessionName, updateConfig, onAttach, exit],
+    [tmux, serverName, sessionName, updateConfig, selfPaneId, setCursor],
   );
 
   const handleCreateAndStart = useCallback(
@@ -533,6 +584,16 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     [currentSessionName, workingDir, startCard],
   );
 
+  const handleSettings = useCallback(
+    (columns: Array<{ id: string; title: string }>, commands: CommandDef[]) => {
+      const cfg = configRef.current;
+      const newConfig: BoardConfig = { ...cfg, columns, commands };
+      updateConfig(newConfig);
+      setModal(null);
+    },
+    [updateConfig],
+  );
+
   const handleStart = useCallback(
     async (values: FormValues) => {
       if (!modal || modal.mode !== "start") return;
@@ -548,8 +609,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         description: values.description,
         acceptanceCriteria: values.acceptanceCriteria,
         dir: values.dir,
-        command: values.command as "shell" | "claude" | "custom",
-        customCommand: values.command === "custom" ? values.customCommand : undefined,
+        command: values.command,
         worktree: values.worktree,
         worktreePath: values.worktree ? values.worktreePath : undefined,
       };
@@ -608,6 +668,25 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     setModal(null);
   }, [modal, columns, cursor, serverName, sessionName, updateConfig, setCursor]);
 
+  const confirmRemove = useCallback(() => {
+    if (!modal || modal.mode !== "confirm-remove") return;
+    const bc = modal.card;
+    const cfg = configRef.current;
+
+    // Delete card from config
+    const { [bc.cardId]: _, ...remainingCards } = cfg.cards;
+    const newConfig: BoardConfig = { ...cfg, cards: remainingCards };
+    updateConfig(newConfig);
+
+    // Adjust cursor if it's now past the end
+    const col = columns[cursor.col];
+    const newMaxRow = Math.max(0, col.cards.length - 2);
+    if (cursor.row > newMaxRow) {
+      setCursor((c) => ({ ...c, row: newMaxRow }));
+    }
+    setModal(null);
+  }, [modal, columns, cursor, updateConfig, setCursor]);
+
   useInput(
     (input, key) => {
       if (input === "y" || key.return) {
@@ -622,6 +701,17 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
   useInput(
     (input, key) => {
       if (input === "y" || key.return) {
+        confirmRemove();
+      } else if (input === "n" || key.escape) {
+        setModal(null);
+      }
+    },
+    { isActive: modal?.mode === "confirm-remove" },
+  );
+
+  useInput(
+    (input, key) => {
+      if (input === "y" || key.return) {
         if (modal?.mode === "confirm-start") {
           const card = findCard(modal.card);
           if (card) startCard(card);
@@ -631,6 +721,15 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       }
     },
     { isActive: modal?.mode === "confirm-start" },
+  );
+
+  useInput(
+    (input, key) => {
+      if (key.escape || input === "?") {
+        setModal(null);
+      }
+    },
+    { isActive: modal?.mode === "help" },
   );
 
   const title = tmux.sessions.find((s) => s.attached)?.name ?? tmux.sessions[0]?.name ?? serverName ?? "tukan";
@@ -654,6 +753,18 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         </Box>
       );
     }
+    if (modal.mode === "confirm-remove") {
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="red" padding={1} width={modalWidth}>
+          <Text>
+            Remove <Text bold color="red">{modal.card.name}</Text>?
+          </Text>
+          <Box marginTop={1}>
+            <Text dimColor>y/Enter confirm · n/Esc cancel</Text>
+          </Box>
+        </Box>
+      );
+    }
     if (modal.mode === "confirm-start") {
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="green" padding={1} width={modalWidth}>
@@ -670,6 +781,48 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       return (
         <QuickShellModal
           onSubmit={handleQuickShell}
+          onCancel={() => setModal(null)}
+          width={modalWidth}
+        />
+      );
+    }
+    if (modal.mode === "help") {
+      const helpBindings = [
+        { key: "←→", desc: "navigate columns" },
+        { key: "↑↓", desc: "navigate cards" },
+        { key: "h/l", desc: "move card between columns" },
+        { key: "\u21B5", desc: "switch to window" },
+        { key: "s", desc: "start / restart card" },
+        { key: "n", desc: "new card" },
+        { key: "e", desc: "edit card" },
+        { key: "r", desc: "resolve card" },
+        { key: "C", desc: "quick shell" },
+        { key: ",", desc: "settings" },
+        { key: "q", desc: "quit" },
+      ];
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1} width={modalWidth}>
+          <Text bold color="cyan">Keybindings</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {helpBindings.map((b) => (
+              <Box key={b.key}>
+                <Box width={8}><Text color="magenta">{b.key}</Text></Box>
+                <Text dimColor>{b.desc}</Text>
+              </Box>
+            ))}
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Press ? or Esc to close</Text>
+          </Box>
+        </Box>
+      );
+    }
+    if (modal.mode === "settings") {
+      return (
+        <SettingsModal
+          initialColumns={configRef.current.columns}
+          initialCommands={configRef.current.commands ?? DEFAULT_COMMANDS}
+          onSubmit={handleSettings}
           onCancel={() => setModal(null)}
           width={modalWidth}
         />
@@ -704,6 +857,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       <NewCardModal
         mode={modalMode}
         initialValues={initialValues}
+        commands={configRef.current.commands ?? DEFAULT_COMMANDS}
         onSubmit={onSubmit}
         onSubmitAndStart={modal.mode === "create" ? handleCreateAndStart : undefined}
         onCancel={() => setModal(null)}
@@ -724,7 +878,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       ) : (
         <>
           <Board columns={columns} cursor={cursor} width={width} height={boardHeight} />
-          <StatusBar />
+          <StatusBar width={width} />
         </>
       )}
     </Box>

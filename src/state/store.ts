@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { TukanState, SessionState } from "./types.js";
 import type { BoardConfig, Card } from "../board/types.js";
-import { COL_DONE } from "../board/types.js";
+import { COL_DONE, DEFAULT_COMMANDS } from "../board/types.js";
 
 const STATE_DIR = join(homedir(), ".config", "tukan");
 const STATE_FILE = join(STATE_DIR, "state.json");
@@ -41,7 +41,8 @@ export async function writeSessionState(sessionName: string, session: SessionSta
 export function migrateConfig(raw: Record<string, unknown>): BoardConfig {
   // Already migrated
   if (raw.cards && typeof raw.cards === "object" && !Array.isArray(raw.cards) && !raw.assignments) {
-    return ensureDoneColumn(raw as unknown as BoardConfig);
+    const config = raw as unknown as Omit<BoardConfig, "commands"> & { commands?: BoardConfig["commands"] };
+    return ensureCommands(ensureDoneColumn({ ...config, commands: config.commands ?? DEFAULT_COMMANDS }));
   }
 
   const columns = (raw.columns ?? []) as BoardConfig["columns"];
@@ -102,7 +103,7 @@ export function migrateConfig(raw: Record<string, unknown>): BoardConfig {
     };
   }
 
-  return ensureDoneColumn({ columns, cards });
+  return ensureCommands(ensureDoneColumn({ columns, cards, commands: DEFAULT_COMMANDS }));
 }
 
 /** Ensure the Done column exists (for configs created before it was added). */
@@ -112,4 +113,38 @@ function ensureDoneColumn(config: BoardConfig): BoardConfig {
     ...config,
     columns: [...config.columns, { id: COL_DONE, title: "Done" }],
   };
+}
+
+/** Ensure commands array exists and migrate old "custom" cards. */
+function ensureCommands(config: BoardConfig): BoardConfig {
+  let commands = config.commands;
+  if (!commands || commands.length === 0) {
+    commands = [...DEFAULT_COMMANDS];
+  }
+
+  let cards = config.cards;
+  let changed = false;
+
+  for (const [cardId, card] of Object.entries(cards)) {
+    if (card.command === "custom" && card.customCommand) {
+      // Find or create a CommandDef for this custom command
+      const existing = commands.find((c) => c.template === card.customCommand);
+      if (existing) {
+        if (!changed) { cards = { ...cards }; changed = true; }
+        cards[cardId] = { ...card, command: existing.id, customCommand: undefined };
+      } else {
+        const id = `cmd-${card.customCommand.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 16)}`;
+        if (!commands.find((c) => c.id === id)) {
+          commands = [...commands, { id, label: card.customCommand, template: card.customCommand }];
+        }
+        if (!changed) { cards = { ...cards }; changed = true; }
+        cards[cardId] = { ...card, command: id, customCommand: undefined };
+      }
+    }
+  }
+
+  if (commands !== config.commands || changed) {
+    return { ...config, commands, cards };
+  }
+  return config;
 }

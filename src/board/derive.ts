@@ -40,7 +40,7 @@ export function deriveBoard(
           displayId: win.id.replace("@", "#"),
           sessionName: session.name,
           name: card.name,
-          command: card.command === "custom" ? (card.customCommand ?? "") : card.command,
+          command: card.command,
           workingDir: firstPane?.workingDir ?? card.dir,
           active: win.active,
           started: true,
@@ -83,7 +83,7 @@ export function deriveBoard(
       displayId: `t${virtualIndex}`,
       sessionName: card.sessionName,
       name: card.name,
-      command: card.command === "custom" ? (card.customCommand ?? "") : card.command,
+      command: card.command,
       workingDir: card.dir,
       active: false,
       started: false,
@@ -123,7 +123,7 @@ export function deriveBoard(
   return config.columns.map((col) => ({
     id: col.id,
     title: col.title,
-    cards: columnMap.get(col.id) ?? [],
+    cards: (columnMap.get(col.id) ?? []).reverse(),
   }));
 }
 

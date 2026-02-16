@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 import { render } from "ink";
-import { execFile, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
-import { promisify } from "node:util";
-import { getTmuxState, detectCurrentSession } from "./tmux/client.js";
+import { getTmuxState, detectCurrentSession, captureAllPaneContents } from "./tmux/client.js";
 import { readSessionState, writeSessionState, migrateConfig } from "./state/store.js";
 import { defaultConfig, COL_IN_PROGRESS } from "./board/types.js";
+import { computePaneHashes } from "./board/activity.js";
 import { reconcileConfig } from "./board/derive.js";
 import { App } from "./ui/App.js";
+import { createProgram } from "./cli.js";
 import type { Cursor } from "./board/types.js";
 import type { SessionState } from "./state/types.js";
 
-function detectServerName(): string | undefined {
+export function detectServerName(): string | undefined {
   const tmuxEnv = process.env.TMUX;
   if (tmuxEnv) {
     // Inside tmux — use the current server
@@ -22,71 +23,12 @@ function detectServerName(): string | undefined {
   return undefined;
 }
 
-function printUsage() {
-  console.log(`tukan - kanban board for tmux windows
+const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "list", "sessions", "refresh", "help"]);
 
-Usage: tukan [session]
-       tukan ls
-
-Commands:
-  ls             list tmux sessions available to connect to
-
-Arguments:
-  session        tmux session name to manage (auto-detected if inside tmux)
-
-Keybindings:
-  ←→             navigate columns
-  ↑↓             navigate cards
-  h/l            move card between columns
-  s              start card (create window, move to in-progress, switch)
-  Enter          switch to window (real) / edit card (virtual)
-  n              create new card
-  e              edit card
-  r              remove card / kill window
-  q              quit`);
-}
-
-const execFileAsync = promisify(execFile);
-
-async function listSessions(serverName: string | undefined): Promise<void> {
-  try {
-    const args: string[] = [];
-    if (serverName) args.push("-L", serverName);
-    args.push("list-sessions", "-F", "#{session_name}\t#{session_windows}\t#{session_attached}");
-    const { stdout } = await execFileAsync("tmux", args);
-    const lines = stdout.trim().split("\n").filter(Boolean);
-    if (lines.length === 0) {
-      console.log("No tmux sessions found.");
-      return;
-    }
-    console.log("tmux sessions:");
-    for (const line of lines) {
-      const [name, windows, attached] = line.split("\t");
-      const attachedLabel = attached === "1" ? " (attached)" : "";
-      console.log(`  ${name}  ${windows} window${windows === "1" ? "" : "s"}${attachedLabel}`);
-    }
-  } catch {
-    console.log("No tmux server running.");
-  }
-}
-
-async function main() {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--help") || args.includes("-h")) {
-    printUsage();
-    return;
-  }
-
-  if (args[0] === "ls") {
-    const serverName = detectServerName();
-    await listSessions(serverName);
-    return;
-  }
-
+async function launchTui(sessionArg?: string) {
   const insideTmux = !!process.env.TMUX;
   const serverName = detectServerName();
-  const sessionName = args[0]
+  const sessionName = sessionArg
     ?? (insideTmux ? await detectCurrentSession(serverName) : null)
     ?? basename(process.cwd());
 
@@ -113,12 +55,51 @@ async function main() {
     const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
     const activeWindows = existingSession?.activeWindows ?? [];
 
-    // Reset lastChangeTimes to now on re-entry so stale timestamps
-    // from before the user left don't immediately trigger idle promotion
+    // Compare current pane hashes with persisted ones to decide which
+    // timestamps to keep. If a pane's content hasn't changed, the card
+    // was truly idle — keep the real timestamp. If it changed (or we have
+    // no prior hash), reset to now so we don't spuriously promote.
+    const savedHashes = existingSession?.paneHashes ?? {};
     const now = Date.now();
-    for (const card of Object.values(config.cards)) {
-      if (card.columnId === COL_IN_PROGRESS && card.windowId && lastChangeTimes[card.windowId] !== undefined) {
-        lastChangeTimes[card.windowId] = now;
+    const allPaneIds: string[] = [];
+    const paneToWindow = new Map<string, string>();
+    for (const session of tmux.sessions) {
+      for (const win of session.windows) {
+        for (const pane of win.panes) {
+          allPaneIds.push(pane.id);
+          paneToWindow.set(pane.id, win.id);
+        }
+      }
+    }
+
+    if (allPaneIds.length > 0 && Object.keys(savedHashes).length > 0) {
+      const freshContents = await captureAllPaneContents(serverName, allPaneIds);
+      const freshHashes = computePaneHashes(freshContents);
+
+      // Find which windows had pane changes since last save
+      const changedWindows = new Set<string>();
+      for (const [paneId, hash] of freshHashes) {
+        const savedHash = savedHashes[paneId];
+        if (savedHash !== undefined && savedHash !== hash) {
+          const windowId = paneToWindow.get(paneId);
+          if (windowId) changedWindows.add(windowId);
+        }
+      }
+
+      // Only reset timestamps for windows whose panes changed
+      for (const card of Object.values(config.cards)) {
+        if (card.columnId === COL_IN_PROGRESS && card.windowId && lastChangeTimes[card.windowId] !== undefined) {
+          if (changedWindows.has(card.windowId)) {
+            lastChangeTimes[card.windowId] = now;
+          }
+        }
+      }
+    } else {
+      // No saved hashes — fall back to resetting all (first launch)
+      for (const card of Object.values(config.cards)) {
+        if (card.columnId === COL_IN_PROGRESS && card.windowId && lastChangeTimes[card.windowId] !== undefined) {
+          lastChangeTimes[card.windowId] = now;
+        }
       }
     }
 
@@ -153,6 +134,20 @@ async function main() {
     spawnSync("tmux", attachArgs, { stdio: "inherit" });
     // Loop back — re-fetch tmux state and re-render
   }
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  // Route to commander for known subcommands and flags
+  if (args.length > 0 && (KNOWN_SUBCOMMANDS.has(args[0]) || args[0].startsWith("-"))) {
+    const program = createProgram();
+    await program.parseAsync(process.argv);
+    return;
+  }
+
+  // Default: launch TUI (with optional session argument)
+  await launchTui(args[0]);
 }
 
 main().catch((err) => {

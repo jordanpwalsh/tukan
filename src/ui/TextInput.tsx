@@ -38,15 +38,21 @@ export function TextInput({ value, onChange, placeholder, focus, multiline, minH
   );
 
   if (multiline) {
+    const maxLines = minHeight ?? 5;
     const showPlaceholder = !value && !focus && placeholder;
-    const lines = showPlaceholder ? [placeholder] : (value || "").split("\n");
-    const padCount = Math.max(0, (minHeight ?? 1) - lines.length);
+    const allLines = showPlaceholder ? [placeholder] : (value || "").split("\n");
+
+    // Show last maxLines lines so the cursor (always at end) stays visible
+    const startLine = Math.max(0, allLines.length - maxLines);
+    const visibleLines = allLines.slice(startLine, startLine + maxLines);
+    const padCount = Math.max(0, maxLines - visibleLines.length);
+
     return (
-      <Box flexDirection="column" minHeight={minHeight}>
-        {lines.map((line, i) => (
+      <Box flexDirection="column" height={maxLines}>
+        {visibleLines.map((line, i) => (
           <Text key={i} dimColor={!!showPlaceholder}>
             {line}
-            {focus && i === lines.length - 1 && <Text color="cyan">{"▏"}</Text>}
+            {focus && startLine + i === allLines.length - 1 && <Text color="cyan">{"▏"}</Text>}
           </Text>
         ))}
         {padCount > 0 && Array.from({ length: padCount }, (_, i) => (

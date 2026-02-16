@@ -8,7 +8,7 @@ const baseOpts: NewWindowOpts = {
   sessionName: "main",
   name: "my-task",
   dir: "/home/user/project",
-  command: "shell",
+  commandTemplate: "",
 };
 
 const baseArgs = [
@@ -32,11 +32,11 @@ describe("buildNewWindowArgs", () => {
     expect(args).toEqual([...baseArgs, ...envArgs]);
   });
 
-  it("claude mode appends claude and prompt with description and criteria", () => {
+  it("claude template appends claude and prompt with description and criteria", () => {
     const args = buildNewWindowArgs(
       {
         ...baseOpts,
-        command: "claude",
+        commandTemplate: "claude",
         description: "Fix the login bug",
         acceptanceCriteria: "Users can log in successfully",
       },
@@ -52,25 +52,25 @@ describe("buildNewWindowArgs", () => {
     ]);
   });
 
-  it("custom mode appends the custom command", () => {
+  it("custom template appends the command", () => {
     const args = buildNewWindowArgs(
-      { ...baseOpts, command: "custom", customCommand: "vim ." },
+      { ...baseOpts, commandTemplate: "vim ." },
       serverName,
     );
     expect(args).toEqual([...baseArgs, ...envArgs, "vim ."]);
   });
 
-  it("claude mode with no description or criteria appends only claude", () => {
+  it("claude template with no description or criteria appends only claude", () => {
     const args = buildNewWindowArgs(
-      { ...baseOpts, command: "claude" },
+      { ...baseOpts, commandTemplate: "claude" },
       serverName,
     );
     expect(args).toEqual([...baseArgs, ...envArgs, "claude"]);
   });
 
-  it("claude mode with only description omits criteria", () => {
+  it("claude template with only description omits criteria", () => {
     const args = buildNewWindowArgs(
-      { ...baseOpts, command: "claude", description: "Do something" },
+      { ...baseOpts, commandTemplate: "claude", description: "Do something" },
       serverName,
     );
     expect(args).toEqual([
@@ -111,9 +111,9 @@ describe("buildNewSessionArgs", () => {
     ]);
   });
 
-  it("appends command for claude mode", () => {
+  it("appends command for claude template", () => {
     const args = buildNewSessionArgs(
-      { ...baseOpts, command: "claude", description: "Fix bug" },
+      { ...baseOpts, commandTemplate: "claude", description: "Fix bug" },
       serverName,
     );
     expect(args[args.length - 2]).toBe("claude");

@@ -63,19 +63,28 @@ export function Card({ card, selected, width }: CardProps) {
   return (
     <Box
       flexDirection="column"
+      flexShrink={0}
       borderStyle={selected ? "bold" : "round"}
       borderColor={selected ? selColor : "gray"}
       width={width}
       paddingLeft={1}
       paddingRight={1}
     >
-      <Text bold={selected} color={selected ? selColor : undefined} wrap="truncate" inverse={selected}>
-        {indicator ? (
-          indicatorColor && !selected
-            ? <><Text color={indicatorColor}>{indicator}</Text>{" "}</>
-            : `${indicator} `
-        ) : ""}{" "}<Text dimColor={!selected}>{card.displayId} </Text>{card.name}{" "}
-      </Text>
+      <Box flexDirection="row">
+        <Text bold={selected} color={selected ? selColor : undefined} wrap="truncate" inverse={selected}>
+          {indicator ? (
+            indicatorColor && !selected
+              ? <><Text color={indicatorColor}>{indicator}</Text>{" "}</>
+              : `${indicator} `
+          ) : ""}{" "}{card.name}{" "}
+        </Text>
+        {selected ? (
+          <Text inverse color={selColor}>{" ".repeat(Math.max(0, width - 4 - (indicator ? 2 : 0) - card.name.length - 2 - card.displayId.length - 2))}</Text>
+        ) : (
+          <Box flexGrow={1} />
+        )}
+        <Text dimColor={!selected} color={selected ? selColor : undefined} inverse={selected}>{" "}{card.displayId}</Text>
+      </Box>
       {dir ? (
         <Text dimColor wrap="truncate">{dir}</Text>
       ) : null}

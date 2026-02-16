@@ -51,6 +51,7 @@ export function Board({ columns, cursor, width, height }: BoardProps) {
           focused={scrollOffset + i === cursor.col}
           selectedRow={cursor.row}
           width={colWidth}
+          height={boardHeight}
         />
       ))}
       {hasRight && (

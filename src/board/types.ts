@@ -1,3 +1,14 @@
+export interface CommandDef {
+  id: string;       // stable key, e.g. "shell", "claude"
+  label: string;    // display name
+  template: string; // shell command ("" = default shell)
+}
+
+export const DEFAULT_COMMANDS: CommandDef[] = [
+  { id: "shell", label: "Shell", template: "" },
+  { id: "claude", label: "Claude Code", template: "claude" },
+];
+
 export interface Card {
   id: string;                    // UUID, stable forever
   name: string;
@@ -6,8 +17,8 @@ export interface Card {
   columnId: string;
   sessionName: string;
   dir: string;
-  command: "shell" | "claude" | "custom";
-  customCommand?: string;
+  command: string;               // references CommandDef.id
+  customCommand?: string;        // backward compat for old "custom" commands
   worktree: boolean;
   worktreePath?: string;
   windowId?: string;             // set when tmux window is linked
@@ -19,6 +30,7 @@ export interface Card {
 export interface BoardConfig {
   columns: Array<{ id: string; title: string }>;
   cards: Record<string, Card>;  // cardId → Card
+  commands: CommandDef[];
 }
 
 export interface BoardCard {
@@ -66,5 +78,6 @@ export function defaultConfig(): BoardConfig {
       { id: COL_DONE, title: "Done" },
     ],
     cards: {},
+    commands: DEFAULT_COMMANDS,
   };
 }
