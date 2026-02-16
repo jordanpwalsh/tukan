@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { COL_IN_PROGRESS } from "./types.js";
+import { COL_IN_PROGRESS, COL_REVIEW } from "./types.js";
 import type { Card } from "./types.js";
 
 export interface ActivityEntry {
@@ -42,7 +42,7 @@ export function detectChangedPanes(prev: PaneHashMap, next: PaneHashMap): Set<st
  * @param prevActivity - previous activity map
  * @param now - current timestamp (ms)
  */
-export const IDLE_PROMOTE_MS = 2 * 60 * 1000;
+export const IDLE_PROMOTE_MS = 30 * 1000;
 
 /**
  * Return card IDs in "in-progress" whose windowId has a lastChangeTime
@@ -60,6 +60,47 @@ export function getIdlePromotions(
     if (!card.windowId) continue;
     const lastChange = lastChangeTimes[card.windowId];
     if (lastChange !== undefined && now - lastChange >= thresholdMs) {
+      result.push(cardId);
+    }
+  }
+  return result;
+}
+
+/**
+ * Return card IDs in "review" whose windowId had activity this poll cycle
+ * — these should be demoted back to "in-progress".
+ */
+export function getReviewDemotions(
+  cards: Record<string, Card>,
+  changedWindowIds: Set<string>,
+): string[] {
+  const result: string[] = [];
+  for (const [cardId, card] of Object.entries(cards)) {
+    if (card.columnId !== COL_REVIEW) continue;
+    if (!card.windowId) continue;
+    if (changedWindowIds.has(card.windowId)) {
+      result.push(cardId);
+    }
+  }
+  return result;
+}
+
+/**
+ * Return card IDs in "review" whose windowId has a lastChangeTime
+ * within thresholdMs — these are no longer idle and should demote to "in-progress".
+ */
+export function getReviewDemotionsByTime(
+  cards: Record<string, Card>,
+  lastChangeTimes: Record<string, number>,
+  now: number,
+  thresholdMs: number,
+): string[] {
+  const result: string[] = [];
+  for (const [cardId, card] of Object.entries(cards)) {
+    if (card.columnId !== COL_REVIEW) continue;
+    if (!card.windowId) continue;
+    const lastChange = lastChangeTimes[card.windowId];
+    if (lastChange !== undefined && now - lastChange < thresholdMs) {
       result.push(cardId);
     }
   }

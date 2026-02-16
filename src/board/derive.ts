@@ -37,7 +37,7 @@ export function deriveBoard(
         boardCards.push({
           cardId: card.id,
           windowId: win.id,
-          displayId: win.id.replace("@", "#"),
+          displayId: card.id.slice(0, 8) + " " + win.id.replace("@", "#"),
           sessionName: session.name,
           name: card.name,
           command: card.command,
@@ -73,14 +73,12 @@ export function deriveBoard(
   }
 
   // Add unstarted and closed cards from config
-  let virtualIndex = 0;
   for (const card of Object.values(config.cards)) {
     if (seenCardIds.has(card.id)) continue;
-    virtualIndex++;
     boardCards.push({
       cardId: card.id,
       windowId: null,
-      displayId: `t${virtualIndex}`,
+      displayId: card.id.slice(0, 8),
       sessionName: card.sessionName,
       name: card.name,
       command: card.command,
@@ -131,10 +129,10 @@ export function reconcileConfig(
   config: BoardConfig,
   server: TmuxServer,
 ): BoardConfig {
-  const existingWindowIds = new Set<string>();
+  const windowNames = new Map<string, string>();
   for (const session of server.sessions) {
     for (const win of session.windows) {
-      existingWindowIds.add(win.id);
+      windowNames.set(win.id, win.name);
     }
   }
 
@@ -143,7 +141,7 @@ export function reconcileConfig(
 
   for (const [cardId, card] of Object.entries(cards)) {
     if (card.windowId) {
-      if (!existingWindowIds.has(card.windowId)) {
+      if (!windowNames.has(card.windowId)) {
         // Window gone — mark as closed
         if (!card.closedAt) {
           cards[cardId] = { ...card, closedAt: Date.now() };
@@ -153,6 +151,12 @@ export function reconcileConfig(
         // Window reappeared — clear closedAt
         if (card.closedAt) {
           cards[cardId] = { ...card, closedAt: undefined };
+          changed = true;
+        }
+        // Update name from tmux if card still has a placeholder windowId name
+        const winName = windowNames.get(card.windowId)!;
+        if (card.name.startsWith("@") && winName) {
+          cards[cardId] = { ...(cards[cardId] ?? card), name: winName };
           changed = true;
         }
       }

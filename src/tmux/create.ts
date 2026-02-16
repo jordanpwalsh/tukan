@@ -79,12 +79,39 @@ function appendCommand(args: string[], opts: NewWindowOpts): void {
   appendEnvVars(args, opts);
   if (opts.commandTemplate) {
     if (opts.commandTemplate === "claude") {
-      // Special handling: append prompt from description
       const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
       args.push("claude", ...(prompt ? [prompt] : []));
     } else {
       args.push(opts.commandTemplate);
     }
   }
-  // empty template = default shell (no command appended)
+  // shell mode (empty template): always open a plain shell.
+  // Description commands are sent via send-keys after window creation.
+}
+
+export function buildWorktreeMergeArgs(dir: string, branchName: string): string[][] {
+  return [
+    ["-C", dir, "merge", branchName],
+    ["-C", dir, "branch", "-d", branchName],
+  ];
+}
+
+export function buildWorktreeRemoveArgs(dir: string, worktreePath: string): string[] {
+  return ["-C", dir, "worktree", "remove", worktreePath];
+}
+
+/** Build send-keys arg arrays to type each line of text into a tmux window. */
+export function buildSendKeysArgs(
+  windowId: string,
+  text: string,
+  serverName: string,
+): string[][] {
+  const lines = text.split("\n").filter((l) => l.trim());
+  return lines.map((line) => [
+    ...(serverName ? ["-L", serverName] : []),
+    "send-keys",
+    "-t", windowId,
+    line,
+    "Enter",
+  ]);
 }

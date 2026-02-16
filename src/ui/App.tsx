@@ -10,11 +10,12 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { deriveBoard } from "../board/derive.js";
 import { moveLeft, moveRight, moveUp, moveDown, moveCard } from "../board/navigation.js";
 import { resolveSwitchArgs } from "../tmux/switch.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, sanitizeBranchName } from "../tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "../tmux/create.js";
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
-import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, IDLE_PROMOTE_MS } from "../board/activity.js";
+import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, getReviewDemotions, IDLE_PROMOTE_MS } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -38,7 +39,7 @@ function findCardCursor(columns: BoardColumn[], cardId: string): Cursor | null {
 type ModalState =
   | null
   | { mode: "create" }
-  | { mode: "confirm-resolve"; card: BoardCard }
+  | { mode: "confirm-resolve"; card: BoardCard; mergeWorktree: boolean; dirtyWarning?: boolean }
   | { mode: "confirm-remove"; card: BoardCard }
   | { mode: "confirm-start"; card: BoardCard }
   | { mode: "start"; card: BoardCard }
@@ -74,6 +75,11 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       return next;
     });
   }, [onCursorChange]);
+
+  const handleScrollChange = useCallback((colScroll: number) => {
+    setCursor((c) => ({ ...c, colScroll }));
+  }, [setCursor]);
+
   const [tmux, setTmux] = useState(initialTmux);
   const [modal, setModal] = useState<ModalState>(null);
   const [paneHashes, setPaneHashes] = useState<PaneHashMap>(new Map());
@@ -176,17 +182,29 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         saveState(configRef.current);
       }
 
-      // Auto-promote idle in-progress cards to review
+      // Compute changed window IDs for demotion check
+      const changedWindowIds = new Set<string>();
+      for (const paneId of changed) {
+        const windowId = paneToWindow.get(paneId);
+        if (windowId) changedWindowIds.add(windowId);
+      }
+
+      // Auto-promote idle in-progress cards to review,
+      // and demote active review cards back to in-progress
       const changeTimes: Record<string, number> = {};
       for (const [windowId, entry] of nextActivity) {
         changeTimes[windowId] = entry.lastChangeTime;
       }
-      const cfg = configRef.current;
+      let cfg = configRef.current;
       const idlePromotions = getIdlePromotions(cfg.cards, changeTimes, Date.now(), IDLE_PROMOTE_MS);
-      if (idlePromotions.length > 0) {
+      const reviewDemotions = getReviewDemotions(cfg.cards, changedWindowIds);
+      if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
         const newCards = { ...cfg.cards };
         for (const cardId of idlePromotions) {
           newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
+        }
+        for (const cardId of reviewDemotions) {
+          newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
         }
         const newConfig: BoardConfig = { ...cfg, cards: newCards };
         setConfig(newConfig);
@@ -292,7 +310,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
           {
             const newColumns = deriveBoard(tmux, newConfig, selfPaneId, activity);
             const nc = findCardCursor(newColumns, movedCardId);
-            if (nc) setCursor(nc);
+            if (nc) setCursor((c) => ({ ...c, ...nc }));
           }
         }
         return;
@@ -336,10 +354,13 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         const targetColIdx = input === "h" ? cursor.col - 1 : cursor.col + 1;
         const targetCol = columns[targetColIdx];
 
-        // Prompt before moving a live-window card into Done
-        if (bc?.windowId && targetCol?.id === COL_DONE) {
-          setModal({ mode: "confirm-resolve", card: bc });
-          return;
+        // Prompt before moving a card into Done (live window or worktree card)
+        if (bc && targetCol?.id === COL_DONE) {
+          const cardRecord = configRef.current.cards[bc.cardId];
+          if (bc.windowId || cardRecord?.worktree) {
+            setModal({ mode: "confirm-resolve", card: bc, mergeWorktree: !!cardRecord?.worktree });
+            return;
+          }
         }
 
         // Prompt before moving an unstarted/closed card into In Progress
@@ -388,7 +409,8 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
           if (columns[cursor.col]?.id === COL_DONE) {
             setModal({ mode: "confirm-remove", card: bc });
           } else {
-            setModal({ mode: "confirm-resolve", card: bc });
+            const cardRecord = configRef.current.cards[bc.cardId];
+            setModal({ mode: "confirm-resolve", card: bc, mergeWorktree: !!cardRecord?.worktree });
           }
         }
       }
@@ -431,7 +453,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       // Move cursor to the new card
       const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
       const newCursor = findCardCursor(newColumns, card.id);
-      if (newCursor) setCursor(newCursor);
+      if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 
       setModal(null);
     },
@@ -476,7 +498,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       // Keep cursor on the edited card
       const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
       const newCursor = findCardCursor(newColumns, bc.cardId);
-      if (newCursor) setCursor(newCursor);
+      if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 
       setModal(null);
     },
@@ -488,7 +510,15 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       let dir = card.dir;
       if (card.worktree) {
         const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-        await execFileAsync("git", wt.args);
+        if (!existsSync(wt.worktreePath)) {
+          try {
+            await execFileAsync("git", wt.args);
+          } catch {
+            // Branch may already exist from a previous start — checkout existing branch
+            const checkoutArgs = wt.args.filter((a) => a !== "-b");
+            await execFileAsync("git", checkoutArgs);
+          }
+        }
         dir = wt.worktreePath;
       }
 
@@ -514,6 +544,14 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
 
       const newWindowId = await execTmuxCommandWithOutput(args);
 
+      // Shell mode: send description lines into the new window
+      if (!commandTemplate && card.description) {
+        const sendKeysCommands = buildSendKeysArgs(newWindowId, card.description, serverName ?? "");
+        for (const skArgs of sendKeysCommands) {
+          await execTmuxCommand(skArgs);
+        }
+      }
+
       // Update card in-place — set windowId, startedAt, move to in-progress
       const cfg = configRef.current;
       const updatedCard: Card = {
@@ -535,7 +573,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       // Move cursor to the card in its new column
       const newColumns = deriveBoard(newTmux, newConfig, selfPaneId, activityRef.current);
       const newCursor = findCardCursor(newColumns, card.id);
-      if (newCursor) setCursor(newCursor);
+      if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 
       setModal(null);
     },
@@ -625,10 +663,25 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     [modal, startCard],
   );
 
-  const confirmResolve = useCallback(() => {
+  const confirmResolve = useCallback(async () => {
     if (!modal || modal.mode !== "confirm-resolve") return;
     const bc = modal.card;
     const cfg = configRef.current;
+    const card = cfg.cards[bc.cardId];
+
+    // Check for uncommitted changes before merging worktree
+    if (modal.mergeWorktree && card?.worktree) {
+      try {
+        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
+        const { stdout } = await execFileAsync("git", ["-C", wt.worktreePath, "status", "--porcelain"]);
+        if (stdout.trim()) {
+          setModal({ ...modal, mergeWorktree: false, dirtyWarning: true });
+          return;
+        }
+      } catch {
+        // If we can't check, skip the warning and proceed
+      }
+    }
 
     // Kill tmux window if live
     if (bc.windowId) {
@@ -637,8 +690,23 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       execTmuxCommand(killArgs).catch(() => {});
     }
 
+    // Merge worktree branch and remove worktree if requested
+    if (modal.mergeWorktree && card?.worktree) {
+      try {
+        const branch = sanitizeBranchName(card.name);
+        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
+        const removeArgs = buildWorktreeRemoveArgs(card.dir, wt.worktreePath);
+        await execFileAsync("git", removeArgs);
+        const mergeSteps = buildWorktreeMergeArgs(card.dir, branch);
+        for (const step of mergeSteps) {
+          await execFileAsync("git", step);
+        }
+      } catch {
+        // Swallow errors — card still resolves
+      }
+    }
+
     // Move card to Done column, clear windowId, set closedAt
-    const card = cfg.cards[bc.cardId];
     if (card) {
       const resolvedCard: Card = {
         ...card,
@@ -693,6 +761,8 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         confirmResolve();
       } else if (input === "n" || key.escape) {
         setModal(null);
+      } else if (input === " " && modal?.mode === "confirm-resolve") {
+        setModal({ ...modal, mergeWorktree: !modal.mergeWorktree, dirtyWarning: false });
       }
     },
     { isActive: modal?.mode === "confirm-resolve" },
@@ -732,7 +802,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     { isActive: modal?.mode === "help" },
   );
 
-  const title = tmux.sessions.find((s) => s.attached)?.name ?? tmux.sessions[0]?.name ?? serverName ?? "tukan";
+  const title = currentSessionName || "tukan";
 
   const modalWidth = Math.min(80, width - 4);
   const boardHeight = height - 1; // title row
@@ -741,14 +811,26 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     if (!modal) return null;
     if (modal.mode === "confirm-resolve") {
       const hasWindow = !!modal.card.windowId;
+      const cardRecord = configRef.current.cards[modal.card.cardId];
+      const isWorktree = !!cardRecord?.worktree;
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="green" padding={1} width={modalWidth}>
           <Text>
             Resolve <Text bold color="green">{modal.card.name}</Text>?
             {hasWindow && <Text dimColor> (will kill the tmux window)</Text>}
           </Text>
+          {isWorktree && (
+            <Box marginTop={1}>
+              <Text>{modal.mergeWorktree ? "[x]" : "[ ]"} Merge worktree branch and remove worktree</Text>
+            </Box>
+          )}
+          {modal.dirtyWarning && (
+            <Box marginTop={1}>
+              <Text color="yellow">Worktree has uncommitted changes — commit or stash first, or resolve without merge</Text>
+            </Box>
+          )}
           <Box marginTop={1}>
-            <Text dimColor>y/Enter confirm · n/Esc cancel</Text>
+            <Text dimColor>y/Enter confirm · n/Esc cancel{isWorktree ? " · Space toggle" : ""}</Text>
           </Box>
         </Box>
       );
@@ -870,6 +952,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     <Box flexDirection="column" width={width} height={height}>
       <Box justifyContent="center">
         <Text bold color="cyan">{title}</Text>
+        <Text dimColor>{" "}{workingDir}</Text>
       </Box>
       {modal ? (
         <Box alignItems="center" justifyContent="center" width={width} height={boardHeight}>
@@ -877,7 +960,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         </Box>
       ) : (
         <>
-          <Board columns={columns} cursor={cursor} width={width} height={boardHeight} />
+          <Board columns={columns} cursor={cursor} width={width} height={boardHeight} onScrollChange={handleScrollChange} />
           <StatusBar width={width} />
         </>
       )}

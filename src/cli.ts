@@ -2,15 +2,15 @@ import { Command } from "commander";
 import { basename } from "node:path";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getTmuxState, detectCurrentSession, execTmuxCommand, execTmuxCommandWithOutput } from "./tmux/client.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, sanitizeBranchName } from "./tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "./tmux/create.js";
 import { readSessionState, writeSessionState, migrateConfig } from "./state/store.js";
-import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_REVIEW } from "./board/types.js";
+import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
-import { getIdlePromotions, IDLE_PROMOTE_MS } from "./board/activity.js";
+import { getIdlePromotions, getReviewDemotionsByTime, IDLE_PROMOTE_MS } from "./board/activity.js";
 import { detectServerName } from "./index.js";
 import {
   createCard,
@@ -115,7 +115,15 @@ export function createProgram(): Command {
       let dir = card.dir;
       if (card.worktree) {
         const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-        await execFileAsync("git", wt.args);
+        if (!existsSync(wt.worktreePath)) {
+          try {
+            await execFileAsync("git", wt.args);
+          } catch {
+            // Branch may already exist from a previous start — checkout existing branch
+            const checkoutArgs = wt.args.filter((a) => a !== "-b");
+            await execFileAsync("git", checkoutArgs);
+          }
+        }
         dir = wt.worktreePath;
       }
 
@@ -140,6 +148,15 @@ export function createProgram(): Command {
         : buildNewSessionArgs(windowOpts, ctx.serverName ?? "");
 
       const newWindowId = await execTmuxCommandWithOutput(args);
+
+      // Shell mode: send description lines into the new window
+      if (!commandTemplate && card.description) {
+        const sendKeysCommands = buildSendKeysArgs(newWindowId, card.description, ctx.serverName ?? "");
+        for (const skArgs of sendKeysCommands) {
+          await execTmuxCommand(skArgs);
+        }
+      }
+
       const newConfig = markCardStarted(ctx.config, id, newWindowId);
       await saveConfig(ctx, newConfig);
       console.log(`Started "${card.name}" → window ${newWindowId}`);
@@ -173,10 +190,12 @@ export function createProgram(): Command {
 
   program
     .command("resolve")
-    .description("Move a card to Done (kill window if live)")
+    .description("Move a card to Done (kill window if live, merge worktree if enabled)")
     .argument("<card>", "Card name or ID prefix")
+    .option("--no-merge", "Skip worktree merge and removal")
+    .option("-f, --force", "Force resolve even with uncommitted worktree changes")
     .option("-s, --session <name>", "Session name")
-    .action(async (query: string, opts: { session?: string }) => {
+    .action(async (query: string, opts: { session?: string; merge?: boolean; force?: boolean }) => {
       const ctx = await loadContext(opts.session);
       const result = resolveCard(ctx.config.cards, query);
       if (!result.ok) {
@@ -185,11 +204,48 @@ export function createProgram(): Command {
         return;
       }
       const { id, card } = result;
+      const shouldMerge = opts.merge !== false && card.worktree;
+
+      // Check for uncommitted changes in the worktree
+      if (shouldMerge) {
+        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
+        try {
+          const { stdout } = await execFileAsync("git", ["-C", wt.worktreePath, "status", "--porcelain"]);
+          if (stdout.trim()) {
+            if (!opts.force) {
+              console.error(`Worktree has uncommitted changes. Commit or stash first, or use --force to resolve anyway.`);
+              process.exitCode = 1;
+              return;
+            }
+            console.warn(`Warning: resolving with uncommitted worktree changes (--force)`);
+          }
+        } catch {
+          // Worktree path may not exist — skip check
+        }
+      }
 
       if (card.windowId) {
         const killArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
         killArgs.push("kill-window", "-t", card.windowId);
         await execTmuxCommand(killArgs).catch(() => {});
+      }
+
+      // Merge worktree branch and remove worktree
+      if (shouldMerge) {
+        try {
+          const branch = sanitizeBranchName(card.name);
+          const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
+          const removeArgs = buildWorktreeRemoveArgs(card.dir, wt.worktreePath);
+          await execFileAsync("git", removeArgs);
+          const mergeSteps = buildWorktreeMergeArgs(card.dir, branch);
+          for (const step of mergeSteps) {
+            await execFileAsync("git", step);
+          }
+          console.log(`Merged branch "${branch}" and removed worktree`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`Warning: worktree cleanup failed: ${msg}`);
+        }
       }
 
       const newConfig = resolveCardInConfig(ctx.config, id);
@@ -341,7 +397,7 @@ export function createProgram(): Command {
           } else if (card.startedAt && !card.windowId) {
             indicator = "\u25C7"; // ◇ — closed
           }
-          console.log(`  ${indicator} ${card.name}  ${card.id.slice(0, 8)}`);
+          console.log(`  ${indicator} ${card.id.slice(0, 8)}  ${card.name}`);
         }
       }
 
@@ -359,12 +415,20 @@ export function createProgram(): Command {
       const existingSession = await readSessionState(ctx.sessionName);
       const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
 
+      const now = Date.now();
+
       // Promote idle in-progress cards to review
-      const idlePromotions = getIdlePromotions(ctx.config.cards, lastChangeTimes, Date.now(), IDLE_PROMOTE_MS);
-      if (idlePromotions.length > 0) {
+      const idlePromotions = getIdlePromotions(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
+      // Demote active review cards back to in-progress
+      const reviewDemotions = getReviewDemotionsByTime(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
+
+      if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
         const newCards = { ...ctx.config.cards };
         for (const cardId of idlePromotions) {
           newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
+        }
+        for (const cardId of reviewDemotions) {
+          newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
         }
         ctx.config = { ...ctx.config, cards: newCards };
       }
@@ -373,11 +437,14 @@ export function createProgram(): Command {
 
       // Report what happened
       const reconciled = Object.values(ctx.config.cards).filter((c) => c.closedAt && !c.windowId);
-      if (idlePromotions.length === 0 && reconciled.length === 0) {
+      if (idlePromotions.length === 0 && reviewDemotions.length === 0 && reconciled.length === 0) {
         console.log("Board is up to date.");
       } else {
         for (const cardId of idlePromotions) {
           console.log(`Promoted "${ctx.config.cards[cardId].name}" → Review (idle)`);
+        }
+        for (const cardId of reviewDemotions) {
+          console.log(`Demoted "${ctx.config.cards[cardId].name}" → In Progress (active)`);
         }
       }
     });

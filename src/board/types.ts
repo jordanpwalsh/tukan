@@ -59,6 +59,7 @@ export interface BoardColumn {
 export interface Cursor {
   col: number;
   row: number;
+  colScroll?: number;
 }
 
 // Stable column IDs (decoupled from display titles)

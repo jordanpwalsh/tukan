@@ -8,7 +8,3 @@ export interface SessionState {
   paneHashes?: Record<string, string>; // paneId → content hash
 }
 
-export interface TukanState {
-  version: 1;
-  sessions: Record<string, SessionState>;
-}

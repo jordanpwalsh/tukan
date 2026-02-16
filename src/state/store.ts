@@ -2,36 +2,56 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { TukanState, SessionState } from "./types.js";
+import type { SessionState } from "./types.js";
 import type { BoardConfig, Card } from "../board/types.js";
 import { COL_DONE, DEFAULT_COMMANDS } from "../board/types.js";
 
 const STATE_DIR = join(homedir(), ".config", "tukan");
-const STATE_FILE = join(STATE_DIR, "state.json");
+const SESSIONS_DIR = join(STATE_DIR, "sessions");
+const LEGACY_STATE_FILE = join(STATE_DIR, "state.json");
 
-async function readFullState(): Promise<TukanState> {
-  try {
-    const data = await readFile(STATE_FILE, "utf-8");
-    return JSON.parse(data) as TukanState;
-  } catch {
-    return { version: 1, sessions: {} };
-  }
+function sessionFile(sessionName: string): string {
+  return join(SESSIONS_DIR, `${sessionName}.json`);
 }
 
-async function writeFullState(state: TukanState): Promise<void> {
-  await mkdir(STATE_DIR, { recursive: true });
-  await writeFile(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+/** Migrate from single state.json to per-session files (one-time). */
+async function migrateLegacyState(): Promise<void> {
+  try {
+    const data = await readFile(LEGACY_STATE_FILE, "utf-8");
+    const state = JSON.parse(data) as { sessions?: Record<string, SessionState> };
+    if (!state.sessions) return;
+    await mkdir(SESSIONS_DIR, { recursive: true });
+    for (const [name, session] of Object.entries(state.sessions)) {
+      const file = sessionFile(name);
+      // Don't overwrite if per-session file already exists
+      try { await readFile(file); continue; } catch {}
+      await writeFile(file, JSON.stringify(session, null, 2) + "\n");
+    }
+    // Remove legacy file after successful migration
+    const { unlink } = await import("node:fs/promises");
+    await unlink(LEGACY_STATE_FILE);
+  } catch {}
 }
 
 export async function readSessionState(sessionName: string): Promise<SessionState | null> {
-  const state = await readFullState();
-  return state.sessions[sessionName] ?? null;
+  try {
+    const data = await readFile(sessionFile(sessionName), "utf-8");
+    return JSON.parse(data) as SessionState;
+  } catch {
+    // Fall back to legacy state.json (triggers migration)
+    await migrateLegacyState();
+    try {
+      const data = await readFile(sessionFile(sessionName), "utf-8");
+      return JSON.parse(data) as SessionState;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function writeSessionState(sessionName: string, session: SessionState): Promise<void> {
-  const state = await readFullState();
-  state.sessions[sessionName] = session;
-  await writeFullState(state);
+  await mkdir(SESSIONS_DIR, { recursive: true });
+  await writeFile(sessionFile(sessionName), JSON.stringify(session, null, 2) + "\n");
 }
 
 /**

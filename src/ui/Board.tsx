@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Box, Text } from "ink";
 import { Column } from "./Column.js";
 import type { BoardColumn, Cursor } from "../board/types.js";
@@ -10,22 +11,37 @@ interface BoardProps {
   cursor: Cursor;
   width: number;
   height: number;
+  onScrollChange?: (colScroll: number) => void;
 }
 
-export function Board({ columns, cursor, width, height }: BoardProps) {
+export function Board({ columns, cursor, width, height, onScrollChange }: BoardProps) {
   const total = columns.length;
   const maxByWidth = Math.max(1, Math.floor(width / MIN_COL_WIDTH));
   const visible = Math.min(total, MAX_VISIBLE, maxByWidth);
 
-  // Scroll so the cursor column is always visible
-  let scrollOffset = 0;
+  // Only scroll when cursor moves past the visible edge
+  let scrollOffset = cursor.colScroll ?? 0;
   if (total > visible) {
-    // Try to keep cursor roughly centered, clamped to valid range
-    scrollOffset = Math.min(
-      Math.max(0, cursor.col - Math.floor(visible / 2)),
-      total - visible,
-    );
+    // Clamp previous offset to valid range first (in case columns changed)
+    scrollOffset = Math.min(Math.max(0, scrollOffset), total - visible);
+    // If cursor went past the right edge, shift right
+    if (cursor.col >= scrollOffset + visible) {
+      scrollOffset = cursor.col - visible + 1;
+    }
+    // If cursor went past the left edge, shift left
+    if (cursor.col < scrollOffset) {
+      scrollOffset = cursor.col;
+    }
+  } else {
+    scrollOffset = 0;
   }
+
+  // Sync computed scroll back to cursor if it changed
+  useEffect(() => {
+    if (scrollOffset !== (cursor.colScroll ?? 0)) {
+      onScrollChange?.(scrollOffset);
+    }
+  }, [scrollOffset, cursor.colScroll, onScrollChange]);
 
   const hasLeft = scrollOffset > 0;
   const hasRight = scrollOffset + visible < total;
