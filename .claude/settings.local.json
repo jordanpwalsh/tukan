@@ -10,7 +10,15 @@
       "WebFetch(domain:term.ink)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:www.npmjs.com)",
-      "Bash(npx vitest run)"
+      "Bash(npx vitest run)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm link:*)",
+      "Bash(npx vitest run:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git stash:*)",
+      "Bash(git stash pop:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
