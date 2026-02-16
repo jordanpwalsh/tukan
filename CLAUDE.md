@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+<!-- Worktree test: verified editing works in worktree branch test-work-tree -->
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

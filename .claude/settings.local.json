@@ -18,7 +18,8 @@
       "Bash(npx tsx:*)",
       "Bash(git stash:*)",
       "Bash(git stash pop:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git -C /Users/jordan/devel/personal/tukan-test-work-tree worktree list)"
     ]
   }
 }
