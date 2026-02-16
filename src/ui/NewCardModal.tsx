@@ -14,6 +14,7 @@ interface NewCardModalProps {
   mode: "create" | "start" | "edit";
   initialValues?: { name?: string; description?: string; acceptanceCriteria?: string; dir?: string; worktree?: boolean; worktreePath?: string; command?: string; customCommand?: string; windowId?: string };
   commands: CommandDef[];
+  defaultDir: string;
   onSubmit: (values: FormValues) => void;
   onSubmitAndStart?: (values: FormValues) => void;
   onCancel: () => void;
@@ -39,6 +40,7 @@ export function NewCardModal({
   mode,
   initialValues,
   commands,
+  defaultDir,
   onSubmit,
   onSubmitAndStart,
   onCancel,
@@ -60,7 +62,7 @@ export function NewCardModal({
     initialValues?.acceptanceCriteria ?? "",
   );
   const [dir, setDir] = useState(
-    initialValues?.dir ?? process.cwd(),
+    initialValues?.dir ?? defaultDir,
   );
   const [worktree, setWorktree] = useState(
     initialValues?.worktree ?? false,
@@ -98,7 +100,7 @@ export function NewCardModal({
       name: name.trim(),
       description,
       acceptanceCriteria,
-      dir: dir || process.cwd(),
+      dir: dir || defaultDir,
       command,
       worktree,
       worktreePath,
@@ -123,7 +125,7 @@ export function NewCardModal({
             name: name.trim(),
             description,
             acceptanceCriteria,
-            dir: dir || process.cwd(),
+            dir: dir || defaultDir,
             command,
             worktree,
             worktreePath,
@@ -224,7 +226,7 @@ export function NewCardModal({
       case "criteria":
         return <TextInput value={acceptanceCriteria} onChange={setAcceptanceCriteria} placeholder="Acceptance criteria" focus={focused} multiline minHeight={5} />;
       case "dir":
-        return <TextInput value={dir} onChange={setDir} placeholder={process.cwd()} focus={focused} />;
+        return <TextInput value={dir} onChange={setDir} placeholder={defaultDir} focus={focused} />;
       case "worktree":
         return <SelectInput options={WORKTREE_OPTIONS} value={worktree ? "yes" : "no"} onChange={(v) => setWorktree(v === "yes")} focus={focused} />;
       case "worktreePath":

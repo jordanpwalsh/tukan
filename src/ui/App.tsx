@@ -940,6 +940,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         mode={modalMode}
         initialValues={initialValues}
         commands={configRef.current.commands ?? DEFAULT_COMMANDS}
+        defaultDir={workingDir}
         onSubmit={onSubmit}
         onSubmitAndStart={modal.mode === "create" ? handleCreateAndStart : undefined}
         onCancel={() => setModal(null)}
