@@ -1,5 +1,7 @@
 # Tukan
 
+![Tukan — a kanban board for tmux](tukan.png)
+
 A kanban-style task manager that lives inside tmux. Organize your work as cards on a board, launch tmux windows from them, and let Tukan automatically track what you're working on.
 
 ## Core Principles
