@@ -4,7 +4,7 @@ import { Column } from "./Column.js";
 import type { BoardColumn, Cursor } from "../board/types.js";
 
 const MAX_VISIBLE = 4;
-const MIN_COL_WIDTH = 24;
+const MIN_COL_WIDTH = 32;
 
 interface BoardProps {
   columns: BoardColumn[];

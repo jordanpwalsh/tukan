@@ -24,6 +24,21 @@ function formatIdleTime(seconds: number): string {
   return `idle ${Math.floor(seconds / 3600)}h`;
 }
 
+/** Build a fixed-width title line: " indicator name   displayId " */
+export function buildTitleLine(
+  indicator: string,
+  name: string,
+  displayId: string,
+  innerWidth: number,
+): { prefix: string; paddedName: string; suffix: string } {
+  const prefix = indicator ? `${indicator} ` : " ";
+  const suffix = ` ${displayId}`;
+  const available = Math.max(0, innerWidth - prefix.length - suffix.length);
+  const truncated = name.length > available ? name.slice(0, available) : name;
+  const paddedName = truncated + " ".repeat(available - truncated.length);
+  return { prefix, paddedName, suffix };
+}
+
 export function Card({ card, selected, width }: CardProps) {
   const [spinnerIndex, setSpinnerIndex] = useState(0);
 
@@ -60,6 +75,23 @@ export function Card({ card, selected, width }: CardProps) {
 
   const selColor = card.started ? "cyan" : "yellow";
 
+  // Build fixed-width title line so inverse highlight fills the entire row
+  const innerWidth = width - 4; // border (2) + padding (2)
+  const { prefix, paddedName, suffix } = buildTitleLine(indicator, card.name, card.displayId, innerWidth);
+
+  const titleRow = selected ? (
+    <Text bold color={selColor} inverse wrap="truncate">
+      {prefix}{paddedName}{suffix}
+    </Text>
+  ) : (
+    <Text wrap="truncate">
+      {indicatorColor
+        ? <Text color={indicatorColor}>{prefix}</Text>
+        : prefix
+      }{paddedName}<Text dimColor>{suffix}</Text>
+    </Text>
+  );
+
   return (
     <Box
       flexDirection="column"
@@ -70,20 +102,7 @@ export function Card({ card, selected, width }: CardProps) {
       paddingLeft={1}
       paddingRight={1}
     >
-      <Box flexDirection="row">
-        <Box flexShrink={1} flexGrow={1}>
-          <Text bold={selected} color={selected ? selColor : undefined} wrap="truncate" inverse={selected}>
-            {indicator ? (
-              indicatorColor && !selected
-                ? <><Text color={indicatorColor}>{indicator}</Text>{" "}</>
-                : `${indicator} `
-            ) : ""}{" "}{card.name}{" "}
-          </Text>
-        </Box>
-        <Box flexShrink={0}>
-          <Text dimColor={!selected} color={selected ? selColor : undefined} inverse={selected}>{" "}{card.displayId}</Text>
-        </Box>
-      </Box>
+      <Box height={1}>{titleRow}</Box>
       {dir ? (
         <Text dimColor wrap="truncate">{dir}</Text>
       ) : null}
