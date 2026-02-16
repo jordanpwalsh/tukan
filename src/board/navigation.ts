@@ -1,4 +1,4 @@
-import type { BoardConfig, BoardColumn, Cursor } from "./types.js";
+import type { BoardConfig, BoardColumn, Cursor, Card } from "./types.js";
 
 export function moveLeft(cursor: Cursor, columns: BoardColumn[]): Cursor {
   if (cursor.col <= 0) return cursor;
@@ -30,6 +30,7 @@ export function moveCard(
   columns: BoardColumn[],
   cursor: Cursor,
   direction: "left" | "right",
+  generateId?: () => string,
 ): { config: BoardConfig; cursor: Cursor } | null {
   const col = columns[cursor.col];
   const card = col?.cards[cursor.row];
@@ -40,18 +41,49 @@ export function moveCard(
   if (targetColIdx < 0 || targetColIdx >= columns.length) return null;
 
   const targetCol = columns[targetColIdx];
-  const newAssignments = {
-    ...config.assignments,
-    [card.windowId]: targetCol.id,
-  };
 
   const newCursor: Cursor = {
     col: targetColIdx,
     row: targetCol.cards.length, // card will be appended at the end
   };
 
+  if (card.uncategorized) {
+    // Auto-create a Card record for uncategorized window
+    const id = generateId?.() ?? card.cardId;
+    const newCard: Card = {
+      id,
+      name: card.name,
+      description: "",
+      acceptanceCriteria: "",
+      columnId: targetCol.id,
+      sessionName: card.sessionName,
+      dir: card.workingDir,
+      command: "shell",
+      worktree: false,
+      windowId: card.windowId!,
+      createdAt: Date.now(),
+    };
+    return {
+      config: {
+        ...config,
+        cards: { ...config.cards, [id]: newCard },
+      },
+      cursor: newCursor,
+    };
+  }
+
+  // Update existing card's columnId
+  const existingCard = config.cards[card.cardId];
+  if (!existingCard) return null;
+
   return {
-    config: { ...config, assignments: newAssignments },
+    config: {
+      ...config,
+      cards: {
+        ...config.cards,
+        [card.cardId]: { ...existingCard, columnId: targetCol.id },
+      },
+    },
     cursor: newCursor,
   };
 }

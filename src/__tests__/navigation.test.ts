@@ -1,20 +1,33 @@
 import { describe, it, expect } from "vitest";
 import { moveLeft, moveRight, moveUp, moveDown, moveCard } from "../board/navigation.js";
 import { defaultConfig } from "../board/types.js";
-import type { BoardColumn, Cursor } from "../board/types.js";
+import type { BoardColumn, BoardCard, Cursor } from "../board/types.js";
+
+function makeBoardCard(colIdx: number, cardIdx: number, opts?: Partial<BoardCard>): BoardCard {
+  return {
+    cardId: `card-${colIdx}-${cardIdx}`,
+    windowId: `@${colIdx}_${cardIdx}`,
+    displayId: `#${colIdx}_${cardIdx}`,
+    sessionName: "main",
+    name: `win-${colIdx}-${cardIdx}`,
+    command: "zsh",
+    workingDir: "/home",
+    active: false,
+    started: false,
+    closed: false,
+    uncategorized: true,
+    hasActivity: false,
+    spinning: false,
+    idleTime: null,
+    ...opts,
+  };
+}
 
 function makeColumns(cardCounts: number[]): BoardColumn[] {
   return cardCounts.map((count, i) => ({
     id: `col${i}`,
     title: `Column ${i}`,
-    cards: Array.from({ length: count }, (_, j) => ({
-      windowId: `@${i}_${j}`,
-      sessionName: "main",
-      name: `win-${i}-${j}`,
-      command: "zsh",
-      workingDir: "/home",
-      active: false,
-    })),
+    cards: Array.from({ length: count }, (_, j) => makeBoardCard(i, j)),
   }));
 }
 
@@ -72,7 +85,7 @@ describe("moveDown", () => {
 });
 
 describe("moveCard", () => {
-  it("moves card right and updates assignment", () => {
+  it("moves uncategorized card right and creates card record", () => {
     const columns = makeColumns([2, 1, 0]);
     const config = {
       ...defaultConfig(),
@@ -80,9 +93,43 @@ describe("moveCard", () => {
     };
     const cursor: Cursor = { col: 0, row: 1 };
 
+    const result = moveCard(config, columns, cursor, "right", () => "new-id");
+    expect(result).not.toBeNull();
+    // Should auto-create a card record for uncategorized window
+    expect(result!.config.cards["new-id"]).toBeDefined();
+    expect(result!.config.cards["new-id"].columnId).toBe("col1");
+    expect(result!.config.cards["new-id"].windowId).toBe("@0_1");
+    expect(result!.cursor.col).toBe(1);
+  });
+
+  it("moves existing card right and updates columnId", () => {
+    const columns = makeColumns([2, 1, 0]);
+    // Override the first card to be a non-uncategorized card with a record
+    columns[0].cards[1] = makeBoardCard(0, 1, { uncategorized: false, started: true });
+    const config = {
+      ...defaultConfig(),
+      columns: columns.map((c) => ({ id: c.id, title: c.title })),
+      cards: {
+        "card-0-1": {
+          id: "card-0-1",
+          name: "my-task",
+          description: "",
+          acceptanceCriteria: "",
+          columnId: "col0",
+          sessionName: "main",
+          dir: "/home",
+          command: "shell" as const,
+          worktree: false,
+          windowId: "@0_1",
+          createdAt: Date.now(),
+        },
+      },
+    };
+    const cursor: Cursor = { col: 0, row: 1 };
+
     const result = moveCard(config, columns, cursor, "right");
     expect(result).not.toBeNull();
-    expect(result!.config.assignments["@0_1"]).toBe("col1");
+    expect(result!.config.cards["card-0-1"].columnId).toBe("col1");
     expect(result!.cursor.col).toBe(1);
   });
 

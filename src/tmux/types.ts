@@ -25,6 +25,6 @@ export interface TmuxSession {
 }
 
 export interface TmuxServer {
-  socketPath: string;
+  serverName: string;
   sessions: TmuxSession[];
 }

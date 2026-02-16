@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { BoardCard } from "../board/types.js";
 
@@ -15,26 +16,71 @@ function shortenPath(dir: string): string {
   return dir;
 }
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function formatIdleTime(seconds: number): string {
+  if (seconds < 60) return `idle ${seconds}s`;
+  if (seconds < 3600) return `idle ${Math.floor(seconds / 60)}m`;
+  return `idle ${Math.floor(seconds / 3600)}h`;
+}
+
 export function Card({ card, selected, width }: CardProps) {
-  const borderColor = selected ? "cyan" : "gray";
+  const [spinnerIndex, setSpinnerIndex] = useState(0);
+
+  useEffect(() => {
+    if (!card.spinning) return;
+    const interval = setInterval(() => {
+      setSpinnerIndex((i) => (i + 1) % SPINNER_FRAMES.length);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [card.spinning]);
+
+  // Indicator precedence: ◇ closed → spinner → ◆ activity → ● active → ○ has window → blank (virtual)
+  let indicator = "";
+  let indicatorColor: string | undefined;
+  if (card.closed) {
+    indicator = "◇";
+  } else if (card.spinning) {
+    indicator = SPINNER_FRAMES[spinnerIndex];
+    indicatorColor = "yellow";
+  } else if (card.hasActivity) {
+    indicator = "◆";
+    indicatorColor = "green";
+  } else if (card.active) {
+    indicator = "●";
+  } else if (card.started || card.uncategorized) {
+    indicator = "○";
+  }
+
+  const command = card.command || "shell";
+  const dir = card.workingDir ? shortenPath(card.workingDir) : "";
+
+  // Show idle time for started cards that aren't spinning
+  const showIdle = card.started && !card.spinning && card.idleTime != null;
+
+  const selColor = card.started ? "cyan" : "yellow";
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={borderColor}
+      borderStyle={selected ? "bold" : "round"}
+      borderColor={selected ? selColor : "gray"}
       width={width}
       paddingLeft={1}
       paddingRight={1}
     >
-      <Text bold color={selected ? "cyan" : undefined} wrap="truncate">
-        {card.name}
+      <Text bold={selected} color={selected ? selColor : undefined} wrap="truncate" inverse={selected}>
+        {indicator ? (
+          indicatorColor && !selected
+            ? <><Text color={indicatorColor}>{indicator}</Text>{" "}</>
+            : `${indicator} `
+        ) : ""}{" "}<Text dimColor={!selected}>{card.displayId} </Text>{card.name}{" "}
       </Text>
+      {dir ? (
+        <Text dimColor wrap="truncate">{dir}</Text>
+      ) : null}
       <Text dimColor wrap="truncate">
-        {card.command} · {shortenPath(card.workingDir)}
-      </Text>
-      <Text dimColor wrap="truncate">
-        [{card.sessionName}]{card.active ? " ●" : ""}
+        {command}{showIdle ? ` · ${formatIdleTime(card.idleTime!)}` : ""}
       </Text>
     </Box>
   );

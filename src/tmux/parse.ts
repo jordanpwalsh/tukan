@@ -59,7 +59,7 @@ function parsePaneLine(line: string): TmuxPane & { windowId: string } {
 }
 
 export function assembleServer(
-  socketPath: string,
+  serverName: string,
   sessions: TmuxSession[],
   windows: (TmuxWindow & { sessionId: string })[],
   panes: (TmuxPane & { windowId: string })[],
@@ -83,5 +83,5 @@ export function assembleServer(
     session.windows = windowsBySession.get(session.id) ?? [];
   }
 
-  return { socketPath, sessions };
+  return { serverName, sessions };
 }

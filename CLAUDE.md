@@ -4,18 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tukan is a kanban-style task manager for tmux windows/sessions, built as a TUI with plans for a webapp frontend. It lets users organize and visualize tmux windows as kanban cards.
+Tukan is a kanban-style task manager for tmux windows/sessions, built as a TUI. It lets users organize tmux windows as kanban cards, create task cards, and launch tmux windows from them.
 
 ## Runtime & Tools
 
 - **Runtime**: Node.js + TypeScript (via tsx)
 - **Package manager**: npm
 - **Testing**: `npx vitest` (unit tests), `npx vitest run` (CI)
-- **Run**: `npx tsx src/index.tsx`
+- **Run**: `npx tsx src/index.tsx [server-name]` (defaults to cwd basename)
 - **TUI framework**: Ink (React for CLIs)
 
 ## Architecture
 
-- **Functional core, imperative shell**: Pure business logic (kanban state, task models, column operations) stays separate from IO (tmux IPC, terminal rendering, webapp server)
-- **tmux interaction**: Use `tmux` CLI commands for listing/managing windows and sessions
+- **Functional core, imperative shell**: Pure business logic (board derivation, navigation, tmux arg building) stays separate from IO (tmux IPC, terminal rendering, state persistence)
+- **tmux interaction**: Uses `tmux` CLI commands. Each tukan instance targets a tmux server by name (`-L`). Auto-creates the server if it doesn't exist.
 - **TUI**: Built with Ink — React-based terminal UI framework
+
+## Key Concepts
+
+- **Unified Card model**: Every task is a `Card` record (`src/board/types.ts`) that persists through its full lifecycle. Cards are stored in `config.cards: Record<string, Card>` keyed by UUID.
+- **Card lifecycle**: Unstarted (no `windowId`) → Started (`windowId` set, `startedAt` set) → Closed (window gone, `startedAt` present) → Restarted (new `windowId`). Cards are never deleted on start — they're updated in-place.
+- **Uncategorized windows**: Tmux windows with no card record appear in the Unassigned column. Moving or editing them auto-creates a Card record.
+- **BoardCard (view model)**: Derived from Card + tmux state. Key flags: `started` (has live window), `closed` (was started, window gone), `uncategorized` (tmux window with no card).
+- **Worktree support**: Cards can opt into git worktree creation — a sibling directory and branch are created when the card is started.
+
+## Project Structure
+
+- `src/board/` — Pure board logic (types, derive, navigation, activity)
+- `src/tmux/` — Tmux interaction (client, parse, switch, create)
+- `src/ui/` — Ink/React UI components (App, Board, Column, Card, NewCardModal, TextInput, SelectInput, StatusBar)
+- `src/state/` — State persistence (JSON file store, migration from old format)
+- `src/__tests__/` — Vitest unit tests
+
+## State Management
+
+- `configRef` pattern: App.tsx uses `useRef(config)` updated each render so all callbacks read the latest config, avoiding stale closures across async operations and `useCallback` boundaries.
+- `onSave` accepts a full `SessionState` (board config + activity times). App.tsx builds this from `configRef.current` + `activityRef.current`, eliminating stale closure bugs.
+- Config is saved to `~/.config/tukan/state.json` via `writeSessionState`. The write is fire-and-forget (not awaited).
+- `migrateConfig()` in `store.ts` converts the old format (`assignments` + `virtualCards` + `cardMeta`) to the unified `cards: Record` format at load time.
+
+## Card Indicators
+
+Indicators show window/activity status, not card existence. Virtual cards (unstarted, no tmux window) have no indicator. Cards with a live window get at least `○`, with more specific states taking precedence:
+
+- (blank) — virtual/unstarted card (no window)
+- `○` — has tmux window, idle
+- `●` — active window
+- `◆` (green) — has recent activity
+- spinner — operation in progress
+- `◇` — closed (was started, window gone)
+
+## Keybindings
+
+- `←→` navigate columns, `↑↓` navigate cards
+- `h/l` move card between columns
+- `s` start/restart card (creates tmux window, moves to in-progress, switches)
+- `Enter` switch to window (live cards) / confirm start (unstarted/closed cards)
+- `n` new card modal, `e` edit card, `r` resolve (move to Done)
+- `q` quit

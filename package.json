@@ -1,13 +1,13 @@
 {
   "name": "tukan",
-  "version": "1.0.0",
+  "version": "0.0.7",
   "description": "",
   "main": "dist/index.js",
   "bin": {
     "tukan": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "npm version patch --no-git-tag-version && tsc",
     "start": "tsx src/index.tsx",
     "test": "vitest run",
     "prepublishOnly": "npm run build"

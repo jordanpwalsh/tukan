@@ -21,13 +21,13 @@ export function Column({ column, focused, selectedRow, width }: ColumnProps) {
       width={width}
     >
       <Box justifyContent="center">
-        <Text bold color={focused ? "cyan" : undefined}>
-          {column.title} ({column.cards.length})
+        <Text bold={focused} color={focused ? "cyan" : undefined} inverse={focused && column.cards.length === 0}>
+          {focused && column.cards.length === 0 ? " " : ""}{column.title} ({column.cards.length}){focused && column.cards.length === 0 ? " " : ""}
         </Text>
       </Box>
       {column.cards.map((card, i) => (
         <Card
-          key={card.windowId}
+          key={card.cardId}
           card={card}
           selected={focused && i === selectedRow}
           width={cardWidth}

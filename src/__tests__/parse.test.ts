@@ -54,9 +54,9 @@ describe("assembleServer", () => {
     const windows = parseWindows("$0\t@0\t0\teditor\t1\n");
     const panes = parsePanes("@0\t%0\t0\t1\tzsh\t1234\t/home\t80\t24\n");
 
-    const server = assembleServer("/tmp/tmux-1000/default", sessions, windows, panes);
+    const server = assembleServer("default", sessions, windows, panes);
 
-    expect(server.socketPath).toBe("/tmp/tmux-1000/default");
+    expect(server.serverName).toBe("default");
     expect(server.sessions).toHaveLength(1);
     expect(server.sessions[0].windows).toHaveLength(1);
     expect(server.sessions[0].windows[0].panes).toHaveLength(1);
@@ -65,7 +65,7 @@ describe("assembleServer", () => {
 
   it("handles sessions with no windows", () => {
     const sessions = parseSessions("$0\tempty\t0\n");
-    const server = assembleServer("/tmp/tmux", sessions, [], []);
+    const server = assembleServer("tmux", sessions, [], []);
     expect(server.sessions[0].windows).toEqual([]);
   });
 });
