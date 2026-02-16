@@ -32,7 +32,7 @@ describe("buildNewWindowArgs", () => {
     expect(args).toEqual([...baseArgs, ...envArgs]);
   });
 
-  it("claude template appends claude and prompt with description and criteria", () => {
+  it("claude template wraps command so shell remains after exit", () => {
     const args = buildNewWindowArgs(
       {
         ...baseOpts,
@@ -47,25 +47,25 @@ describe("buildNewWindowArgs", () => {
       "-e", "TUKAN_CARD_NAME=my-task",
       "-e", "TUKAN_CARD_DESCRIPTION=Fix the login bug",
       "-e", "TUKAN_CARD_AC=Users can log in successfully",
-      "claude",
+      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--",
       "Fix the login bug\n\nAcceptance criteria: Users can log in successfully",
     ]);
   });
 
-  it("custom template appends the command", () => {
+  it("custom template wraps command so shell remains after exit", () => {
     const args = buildNewWindowArgs(
       { ...baseOpts, commandTemplate: "vim ." },
       serverName,
     );
-    expect(args).toEqual([...baseArgs, ...envArgs, "vim ."]);
+    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'vim .; exec "${SHELL:-sh}"']);
   });
 
-  it("claude template with no description or criteria appends only claude", () => {
+  it("claude template with no description or criteria wraps bare claude", () => {
     const args = buildNewWindowArgs(
       { ...baseOpts, commandTemplate: "claude" },
       serverName,
     );
-    expect(args).toEqual([...baseArgs, ...envArgs, "claude"]);
+    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--"]);
   });
 
   it("claude template with only description omits criteria", () => {
@@ -78,7 +78,7 @@ describe("buildNewWindowArgs", () => {
       "-e", "TUKAN_CARD_NAME=my-task",
       "-e", "TUKAN_CARD_DESCRIPTION=Do something",
       "-e", "TUKAN_CARD_AC=",
-      "claude",
+      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--",
       "Do something",
     ]);
   });
@@ -124,13 +124,14 @@ describe("buildNewSessionArgs", () => {
     ]);
   });
 
-  it("appends command for claude template", () => {
+  it("appends wrapped command for claude template", () => {
     const args = buildNewSessionArgs(
       { ...baseOpts, commandTemplate: "claude", description: "Fix bug" },
       serverName,
     );
-    expect(args[args.length - 2]).toBe("claude");
-    expect(args[args.length - 1]).toBe("Fix bug");
+    expect(args.slice(-5)).toEqual([
+      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--", "Fix bug",
+    ]);
   });
 });
 

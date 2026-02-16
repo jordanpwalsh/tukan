@@ -78,11 +78,12 @@ function appendEnvVars(args: string[], opts: NewWindowOpts): void {
 function appendCommand(args: string[], opts: NewWindowOpts): void {
   appendEnvVars(args, opts);
   if (opts.commandTemplate) {
+    // Wrap commands so a shell remains after they exit
     if (opts.commandTemplate === "claude") {
       const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
-      args.push("claude", ...(prompt ? [prompt] : []));
+      args.push("sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--", ...(prompt ? [prompt] : []));
     } else {
-      args.push(opts.commandTemplate);
+      args.push("sh", "-c", opts.commandTemplate + '; exec "${SHELL:-sh}"');
     }
   }
   // shell mode (empty template): always open a plain shell.
