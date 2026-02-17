@@ -1,4 +1,5 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -25,7 +26,7 @@ async function migrateLegacyState(): Promise<void> {
       const file = sessionFile(name);
       // Don't overwrite if per-session file already exists
       try { await readFile(file); continue; } catch {}
-      await writeFile(file, JSON.stringify(session, null, 2) + "\n");
+      writeFileSync(file, JSON.stringify(session, null, 2) + "\n");
     }
     // Remove legacy file after successful migration
     const { unlink } = await import("node:fs/promises");
@@ -49,9 +50,9 @@ export async function readSessionState(sessionName: string): Promise<SessionStat
   }
 }
 
-export async function writeSessionState(sessionName: string, session: SessionState): Promise<void> {
-  await mkdir(SESSIONS_DIR, { recursive: true });
-  await writeFile(sessionFile(sessionName), JSON.stringify(session, null, 2) + "\n");
+export function writeSessionState(sessionName: string, session: SessionState): void {
+  mkdirSync(SESSIONS_DIR, { recursive: true });
+  writeFileSync(sessionFile(sessionName), JSON.stringify(session, null, 2) + "\n");
 }
 
 /**

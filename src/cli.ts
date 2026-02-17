@@ -53,7 +53,7 @@ async function loadContext(sessionFlag?: string): Promise<Context> {
 }
 
 async function saveConfig(ctx: Context, config: BoardConfig): Promise<void> {
-  await writeSessionState(ctx.sessionName, { board: config, workingDir: ctx.workingDir });
+  writeSessionState(ctx.sessionName, { board: config, workingDir: ctx.workingDir });
 }
 
 export function createProgram(): Command {

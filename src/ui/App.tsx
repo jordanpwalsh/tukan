@@ -208,6 +208,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         }
         const newConfig: BoardConfig = { ...cfg, cards: newCards };
         setConfig(newConfig);
+        configRef.current = newConfig;
         saveState(newConfig);
       }
     };
@@ -223,6 +224,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
   const updateConfig = useCallback(
     (newConfig: BoardConfig) => {
       setConfig(newConfig);
+      configRef.current = newConfig;
       saveState(newConfig);
     },
     [saveState],
