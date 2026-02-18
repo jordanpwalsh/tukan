@@ -14,6 +14,8 @@ import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktr
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
 import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, getReviewDemotions, IDLE_PROMOTE_MS } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
+import { buildPreviewMap } from "../board/pane-preview.js";
+import type { PanePreviewMap } from "../board/pane-preview.js";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
@@ -95,6 +97,8 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     return map;
   });
 
+  const [panePreview, setPanePreview] = useState<PanePreviewMap>(new Map());
+
   // Keep a ref to always access latest config, avoiding stale closures
   const configRef = useRef(config);
   configRef.current = config;
@@ -106,6 +110,8 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
   paneHashesRef.current = paneHashes;
   const activityRef = useRef(activity);
   activityRef.current = activity;
+  const panePreviewRef = useRef(panePreview);
+  panePreviewRef.current = panePreview;
   const tmuxRef = useRef(tmux);
   tmuxRef.current = tmux;
 
@@ -172,6 +178,10 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         changed, paneToWindow, activeWindowId, activityRef.current, Date.now(),
       );
 
+      // Build preview map from raw pane content
+      const nextPreview = buildPreviewMap(contents, paneToWindow);
+      setPanePreview(nextPreview);
+
       const hadNoHashes = paneHashesRef.current.size === 0;
       paneHashesRef.current = nextHashes;
       setPaneHashes(nextHashes);
@@ -219,7 +229,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     return () => clearInterval(interval);
   }, [serverName, selfPaneId, saveState]);
 
-  const columns = useMemo(() => deriveBoard(tmux, config, selfPaneId, activity), [tmux, config, selfPaneId, activity]);
+  const columns = useMemo(() => deriveBoard(tmux, config, selfPaneId, activity, panePreview), [tmux, config, selfPaneId, activity, panePreview]);
 
   const updateConfig = useCallback(
     (newConfig: BoardConfig) => {
@@ -310,7 +320,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
 
           // Move cursor to the card in its new column
           {
-            const newColumns = deriveBoard(tmux, newConfig, selfPaneId, activity);
+            const newColumns = deriveBoard(tmux, newConfig, selfPaneId, activity, panePreviewRef.current);
             const nc = findCardCursor(newColumns, movedCardId);
             if (nc) setCursor((c) => ({ ...c, ...nc }));
           }
@@ -453,7 +463,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       updateConfig(newConfig);
 
       // Move cursor to the new card
-      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
+      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current, panePreviewRef.current);
       const newCursor = findCardCursor(newColumns, card.id);
       if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 
@@ -498,7 +508,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       }
 
       // Keep cursor on the edited card
-      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current);
+      const newColumns = deriveBoard(tmuxRef.current, newConfig, selfPaneId, activityRef.current, panePreviewRef.current);
       const newCursor = findCardCursor(newColumns, bc.cardId);
       if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 
@@ -573,7 +583,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       setTmux(newTmux);
 
       // Move cursor to the card in its new column
-      const newColumns = deriveBoard(newTmux, newConfig, selfPaneId, activityRef.current);
+      const newColumns = deriveBoard(newTmux, newConfig, selfPaneId, activityRef.current, panePreviewRef.current);
       const newCursor = findCardCursor(newColumns, card.id);
       if (newCursor) setCursor((c) => ({ ...c, ...newCursor }));
 

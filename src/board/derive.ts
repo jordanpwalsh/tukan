@@ -2,12 +2,15 @@ import type { TmuxServer } from "../tmux/types.js";
 import type { BoardConfig, BoardCard, BoardColumn, Card } from "./types.js";
 import { COL_UNASSIGNED } from "./types.js";
 import type { ActivityMap } from "./activity.js";
+import type { PanePreviewMap } from "./pane-preview.js";
+import { shouldShowPreview } from "./pane-preview.js";
 
 export function deriveBoard(
   server: TmuxServer,
   config: BoardConfig,
   selfPaneId?: string,
   activityMap?: ActivityMap,
+  previewMap?: PanePreviewMap,
 ): BoardColumn[] {
   // Build windowId → Card index
   const windowToCard = new Map<string, Card>();
@@ -34,7 +37,7 @@ export function deriveBoard(
       if (card) {
         // Window owned by a card — use card data
         seenCardIds.add(card.id);
-        boardCards.push({
+        const bc: BoardCard = {
           cardId: card.id,
           windowId: win.id,
           displayId: card.id.slice(0, 8) + " " + win.id.replace("@", "#"),
@@ -49,10 +52,15 @@ export function deriveBoard(
           hasActivity: activity?.hasActivity ?? false,
           spinning: activity?.spinning ?? false,
           idleTime: activity?.lastChangeTime != null ? Math.floor((now - activity.lastChangeTime) / 1000) : null,
-        });
+          panePreview: null,
+        };
+        if (shouldShowPreview(bc) && previewMap) {
+          bc.panePreview = previewMap.get(win.id) ?? null;
+        }
+        boardCards.push(bc);
       } else {
         // Uncategorized window — no card record
-        boardCards.push({
+        const bc: BoardCard = {
           cardId: win.id, // use windowId as temporary cardId for uncategorized
           windowId: win.id,
           displayId: win.id.replace("@", "#"),
@@ -67,7 +75,12 @@ export function deriveBoard(
           hasActivity: activity?.hasActivity ?? false,
           spinning: activity?.spinning ?? false,
           idleTime: activity?.lastChangeTime != null ? Math.floor((now - activity.lastChangeTime) / 1000) : null,
-        });
+          panePreview: null,
+        };
+        if (shouldShowPreview(bc) && previewMap) {
+          bc.panePreview = previewMap.get(win.id) ?? null;
+        }
+        boardCards.push(bc);
       }
     }
   }
@@ -90,6 +103,7 @@ export function deriveBoard(
       hasActivity: false,
       spinning: false,
       idleTime: null,
+      panePreview: null,
     });
   }
 

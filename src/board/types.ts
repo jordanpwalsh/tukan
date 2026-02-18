@@ -48,6 +48,7 @@ export interface BoardCard {
   hasActivity: boolean;
   spinning: boolean;
   idleTime: number | null;
+  panePreview: string[] | null;
 }
 
 export interface BoardColumn {

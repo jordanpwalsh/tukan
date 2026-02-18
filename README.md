@@ -83,6 +83,8 @@ Manage cards without entering the TUI:
 tukan add "Fix login bug"       # create a card in Todo
 tukan start <card>              # start a card (creates tmux window)
 tukan resolve <card>            # move card to Done
+tukan peek <card>               # show a card's current pane content
+tukan send <card> <text>        # send keystrokes to a card's pane
 tukan list                      # list cards
 tukan sessions                  # list tukan sessions
 tukan refresh                   # sync activity state
@@ -101,6 +103,19 @@ tukan refresh                   # sync activity state
 | `e` | Edit card |
 | `r` | Resolve (move to Done) |
 | `q` | Quit |
+
+### Pane preview
+
+When a card's tmux window goes idle (no output changes for 5+ seconds), Tukan shows the last few lines of the pane content directly on the card. This lets you see what a process is waiting for — like a Claude Code permission prompt or a script asking for input — without switching windows.
+
+To read or respond from the CLI:
+
+```sh
+tukan peek <card>               # print the full pane content
+tukan peek <card> -n 5          # last 5 non-blank lines only
+tukan send <card> y             # send "y" + Enter to the card's pane
+tukan send <card> --no-enter n  # send "n" without pressing Enter
+```
 
 ### Card indicators
 

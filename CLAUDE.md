@@ -27,12 +27,13 @@ Tukan is a kanban-style task manager for tmux windows/sessions, built as a TUI. 
 - **Unified Card model**: Every task is a `Card` record (`src/board/types.ts`) that persists through its full lifecycle. Cards are stored in `config.cards: Record<string, Card>` keyed by UUID.
 - **Card lifecycle**: Unstarted (no `windowId`) → Started (`windowId` set, `startedAt` set) → Closed (window gone, `startedAt` present) → Restarted (new `windowId`). Cards are never deleted on start — they're updated in-place.
 - **Uncategorized windows**: Tmux windows with no card record appear in the Unassigned column. Moving or editing them auto-creates a Card record.
-- **BoardCard (view model)**: Derived from Card + tmux state. Key flags: `started` (has live window), `closed` (was started, window gone), `uncategorized` (tmux window with no card).
+- **BoardCard (view model)**: Derived from Card + tmux state. Key flags: `started` (has live window), `closed` (was started, window gone), `uncategorized` (tmux window with no card). Includes `panePreview: string[] | null` for idle pane content.
+- **Pane preview**: When a card is idle for 5+ seconds, the last 3 non-blank lines of its pane content are shown on the card. Built via `buildPreviewMap()` in `src/board/pane-preview.ts` (pure module), threaded through `deriveBoard()` as a `PanePreviewMap`. `shouldShowPreview()` gates display to idle, non-active, non-spinning started cards.
 - **Worktree support**: Cards can opt into git worktree creation — a sibling directory and branch are created when the card is started.
 
 ## Project Structure
 
-- `src/board/` — Pure board logic (types, derive, navigation, activity)
+- `src/board/` — Pure board logic (types, derive, navigation, activity, pane-preview)
 - `src/tmux/` — Tmux interaction (client, parse, switch, create)
 - `src/ui/` — Ink/React UI components (App, Board, Column, Card, NewCardModal, TextInput, SelectInput, StatusBar)
 - `src/state/` — State persistence (JSON file store, migration from old format)
@@ -64,3 +65,11 @@ Indicators show window/activity status, not card existence. Virtual cards (unsta
 - `Enter` switch to window (live cards) / confirm start (unstarted/closed cards)
 - `n` new card modal, `e` edit card, `r` resolve (move to Done)
 - `q` quit
+
+## CLI Commands
+
+- `tukan add <name>` create card, `tukan start <card>` start card, `tukan stop <card>` stop card
+- `tukan resolve <card>` move to Done, `tukan edit <card>` edit card
+- `tukan peek <card>` print a card's current pane content (`-n N` for last N non-blank lines)
+- `tukan send <card> <text>` send keystrokes to a card's tmux pane (`--no-enter` to skip Enter)
+- `tukan list` list cards, `tukan refresh` sync activity, `tukan sessions` list sessions

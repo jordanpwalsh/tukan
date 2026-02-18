@@ -3,6 +3,8 @@ import { deriveBoard, reconcileConfig } from "../board/derive.js";
 import { defaultConfig, COL_TODO, COL_IN_PROGRESS } from "../board/types.js";
 import type { BoardConfig, Card } from "../board/types.js";
 import type { TmuxServer } from "../tmux/types.js";
+import type { ActivityMap } from "../board/activity.js";
+import type { PanePreviewMap } from "../board/pane-preview.js";
 
 function makeServer(windows: Array<{ id: string; name: string; sessionName?: string }>): TmuxServer {
   const sessionMap = new Map<string, typeof windows>();
@@ -131,6 +133,45 @@ describe("deriveBoard", () => {
     expect(columns[1].cards[0].name).toBe("todo-task");
     expect(columns[1].cards[0].started).toBe(false);
     expect(columns[1].cards[0].windowId).toBeNull();
+  });
+
+  it("threads pane preview onto idle started cards", () => {
+    // Two windows so @1 is not the active one (makeServer sets active on index 0)
+    const server = makeServer([{ id: "@0", name: "tukan" }, { id: "@1", name: "editor" }]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({ id: "card-1", name: "my-task", columnId: COL_IN_PROGRESS, windowId: "@1", startedAt: Date.now() - 60000 }),
+      },
+    };
+    const activityMap: ActivityMap = new Map([
+      ["@1", { hasActivity: false, lastChangeTime: Date.now() - 10000, spinning: false }],
+    ]);
+    const previewMap: PanePreviewMap = new Map([
+      ["@1", ["$ claude", "? Allow this action? (y/n)"]],
+    ]);
+    const columns = deriveBoard(server, config, "%0", activityMap, previewMap);
+    const card = columns[2].cards[0]; // COL_IN_PROGRESS
+    expect(card.panePreview).toEqual(["$ claude", "? Allow this action? (y/n)"]);
+  });
+
+  it("does not show preview on spinning cards", () => {
+    const server = makeServer([{ id: "@0", name: "tukan" }, { id: "@1", name: "editor" }]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({ id: "card-1", name: "my-task", columnId: COL_IN_PROGRESS, windowId: "@1", startedAt: Date.now() - 60000 }),
+      },
+    };
+    const activityMap: ActivityMap = new Map([
+      ["@1", { hasActivity: false, lastChangeTime: Date.now() - 10000, spinning: true }],
+    ]);
+    const previewMap: PanePreviewMap = new Map([
+      ["@1", ["some content"]],
+    ]);
+    const columns = deriveBoard(server, config, "%0", activityMap, previewMap);
+    const card = columns[2].cards[0];
+    expect(card.panePreview).toBeNull();
   });
 
   it("shows closed cards (with closedAt) with closed flag", () => {

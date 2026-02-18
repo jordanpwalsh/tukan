@@ -333,6 +333,89 @@ export function createProgram(): Command {
     });
 
   program
+    .command("peek")
+    .description("Show the current pane content of a card's tmux window")
+    .argument("<card>", "Card name or ID prefix")
+    .option("-n, --tail <lines>", "Show only the last N non-blank lines")
+    .option("-s, --session <name>", "Session name")
+    .action(async (query: string, opts: { session?: string; tail?: string }) => {
+      const ctx = await loadContext(opts.session);
+      const result = resolveCard(ctx.config.cards, query);
+      if (!result.ok) {
+        console.error(result.error);
+        process.exitCode = 1;
+        return;
+      }
+      const { card } = result;
+
+      if (!card.windowId) {
+        console.error(`Card "${card.name}" has no live window. Start it first.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const args: string[] = [];
+      if (ctx.serverName) args.push("-L", ctx.serverName);
+      args.push("capture-pane", "-p", "-t", card.windowId);
+      const raw = await execTmuxCommandWithOutput(args);
+
+      if (opts.tail) {
+        const n = parseInt(opts.tail, 10);
+        if (isNaN(n) || n <= 0) {
+          console.error("--tail must be a positive number");
+          process.exitCode = 1;
+          return;
+        }
+        const lines = raw.split("\n").map((l) => l.trimEnd()).filter((l) => l.length > 0);
+        console.log(lines.slice(-n).join("\n"));
+      } else {
+        // Strip trailing blank lines
+        const lines = raw.split("\n");
+        while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+          lines.pop();
+        }
+        console.log(lines.join("\n"));
+      }
+    });
+
+  program
+    .command("send")
+    .description("Send keystrokes to a card's tmux pane")
+    .argument("<card>", "Card name or ID prefix")
+    .argument("<text...>", "Text to send (joined with spaces, Enter appended)")
+    .option("-s, --session <name>", "Session name")
+    .option("--no-enter", "Don't append Enter after the text")
+    .action(async (query: string, textParts: string[], opts: { session?: string; enter?: boolean }) => {
+      const ctx = await loadContext(opts.session);
+      const result = resolveCard(ctx.config.cards, query);
+      if (!result.ok) {
+        console.error(result.error);
+        process.exitCode = 1;
+        return;
+      }
+      const { card } = result;
+
+      if (!card.windowId) {
+        console.error(`Card "${card.name}" has no live window. Start it first.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const text = textParts.join(" ");
+      const serverArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
+
+      // Send text literally (-l) to avoid key name interpretation
+      await execTmuxCommand([...serverArgs, "send-keys", "-t", card.windowId, "-l", text]);
+
+      // Send Enter as a separate command so it's cleanly processed
+      if (opts.enter !== false) {
+        await execTmuxCommand([...serverArgs, "send-keys", "-t", card.windowId, "Enter"]);
+      }
+
+      console.log(`Sent to "${card.name}"`);
+    });
+
+  program
     .command("list")
     .description("List cards grouped by column")
     .option("--column <name>", "Filter to a specific column")

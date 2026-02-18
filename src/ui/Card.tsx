@@ -79,6 +79,11 @@ export function Card({ card, selected, width }: CardProps) {
   const innerWidth = width - 4; // border (2) + padding (2)
   const { prefix, paddedName, suffix } = buildTitleLine(indicator, card.name, card.displayId, innerWidth);
 
+  // Truncate preview lines to fit card width
+  const previewLines = card.panePreview?.map((line) =>
+    line.length > innerWidth ? line.slice(0, innerWidth - 1) + "\u2026" : line
+  ) ?? [];
+
   const titleRow = selected ? (
     <Text bold color={selColor} inverse wrap="truncate">
       {prefix}{paddedName}{suffix}
@@ -109,6 +114,14 @@ export function Card({ card, selected, width }: CardProps) {
       <Text dimColor wrap="truncate">
         {command}{showIdle ? ` · ${formatIdleTime(card.idleTime!)}` : ""}
       </Text>
+      {previewLines.length > 0 && (
+        <Box flexDirection="column">
+          <Text dimColor>{"─".repeat(Math.min(innerWidth, 20))}</Text>
+          {previewLines.map((line, i) => (
+            <Text key={i} color="gray" wrap="truncate">{line}</Text>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }
