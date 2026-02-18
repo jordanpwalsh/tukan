@@ -27,8 +27,8 @@ Tukan is a kanban-style task manager for tmux windows/sessions, built as a TUI. 
 - **Unified Card model**: Every task is a `Card` record (`src/board/types.ts`) that persists through its full lifecycle. Cards are stored in `config.cards: Record<string, Card>` keyed by UUID.
 - **Card lifecycle**: Unstarted (no `windowId`) → Started (`windowId` set, `startedAt` set) → Closed (window gone, `startedAt` present) → Restarted (new `windowId`). Cards are never deleted on start — they're updated in-place.
 - **Uncategorized windows**: Tmux windows with no card record appear in the Unassigned column. Moving or editing them auto-creates a Card record.
-- **BoardCard (view model)**: Derived from Card + tmux state. Key flags: `started` (has live window), `closed` (was started, window gone), `uncategorized` (tmux window with no card). Includes `panePreview: string[] | null` for idle pane content.
-- **Pane preview**: When a card is idle for 5+ seconds, the last 3 non-blank lines of its pane content are shown on the card. Built via `buildPreviewMap()` in `src/board/pane-preview.ts` (pure module), threaded through `deriveBoard()` as a `PanePreviewMap`. `shouldShowPreview()` gates display to idle, non-active, non-spinning started cards.
+- **BoardCard (view model)**: Derived from Card + tmux state. Key flags: `started` (has live window), `closed` (was started, window gone), `uncategorized` (tmux window with no card).
+- **Pane interaction CLI**: `tukan peek` reads pane content (via `tmux capture-pane`), `tukan send` sends keystrokes (via `tmux send-keys`). Useful for AI agents or responding to prompts without switching windows.
 - **Worktree support**: Cards can opt into git worktree creation — a sibling directory and branch are created when the card is started.
 
 ## Project Structure

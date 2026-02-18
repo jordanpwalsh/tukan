@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractPreviewLines, buildPreviewMap, shouldShowPreview } from "../board/pane-preview.js";
+import { extractPreviewLines, buildPreviewMap } from "../board/pane-preview.js";
 
 describe("extractPreviewLines", () => {
   it("returns last N non-blank lines", () => {
@@ -59,33 +59,5 @@ describe("buildPreviewMap", () => {
     ]);
     const result = buildPreviewMap(contents, paneToWindow);
     expect(result.get("@0")).toEqual(["first"]);
-  });
-});
-
-describe("shouldShowPreview", () => {
-  const base = { spinning: false, windowId: "@0" as string | null, closed: false, idleTime: 10 };
-
-  it("shows preview for idle card with window", () => {
-    expect(shouldShowPreview(base)).toBe(true);
-  });
-
-  it("hides when spinning", () => {
-    expect(shouldShowPreview({ ...base, spinning: true })).toBe(false);
-  });
-
-  it("hides when no windowId", () => {
-    expect(shouldShowPreview({ ...base, windowId: null })).toBe(false);
-  });
-
-  it("hides when closed", () => {
-    expect(shouldShowPreview({ ...base, closed: true })).toBe(false);
-  });
-
-  it("hides when idle time below threshold", () => {
-    expect(shouldShowPreview({ ...base, idleTime: 3 }, 5)).toBe(false);
-  });
-
-  it("hides when idleTime is null", () => {
-    expect(shouldShowPreview({ ...base, idleTime: null })).toBe(false);
   });
 });

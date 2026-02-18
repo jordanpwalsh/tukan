@@ -1,8 +1,3 @@
-export type PanePreviewMap = Map<string, string[]>; // windowId → lines
-
-/** Minimum idle seconds before showing preview */
-export const PREVIEW_IDLE_THRESHOLD_S = 5;
-
 /** Max lines to show in the preview */
 export const PREVIEW_MAX_LINES = 3;
 
@@ -27,8 +22,8 @@ export function buildPreviewMap(
   paneContents: Map<string, string>,
   paneToWindow: Map<string, string>,
   maxLines: number = PREVIEW_MAX_LINES,
-): PanePreviewMap {
-  const result: PanePreviewMap = new Map();
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
 
   for (const [paneId, content] of paneContents) {
     const windowId = paneToWindow.get(paneId);
@@ -42,19 +37,4 @@ export function buildPreviewMap(
   }
 
   return result;
-}
-
-/**
- * Whether a card should display its pane preview.
- * Shows for any card with a live window that has been idle long enough.
- */
-export function shouldShowPreview(
-  card: { spinning: boolean; windowId: string | null; closed: boolean; idleTime: number | null },
-  thresholdSeconds: number = PREVIEW_IDLE_THRESHOLD_S,
-): boolean {
-  if (!card.windowId) return false;
-  if (card.closed) return false;
-  if (card.spinning) return false;
-  if (card.idleTime === null) return false;
-  return card.idleTime >= thresholdSeconds;
 }

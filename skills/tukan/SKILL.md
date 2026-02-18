@@ -17,7 +17,7 @@ Use Tukan when you need to break coding work into discrete tasks, execute them i
 - **Lifecycle**: Cards start in Todo. `start` creates a tmux window pointed at the task's project directory and moves the card to In Progress. `resolve` moves it to Done and optionally merges the git branch.
 - **Session**: Cards are scoped to a tmux session (auto-detected or passed with `-s`). Different sessions can track different project boards.
 - **Worktree**: Cards can optionally create a git worktree + branch, giving each task an isolated checkout for parallel work on the same repo.
-- **Pane preview**: When a card's window goes idle (5+ seconds), the TUI shows the last few lines of pane output on the card — useful for seeing prompts (like Claude Code permission requests) without switching windows. Use `tukan send` to respond.
+- **Pane interaction**: `tukan peek` reads a card's pane content, `tukan send` sends keystrokes — useful for AI agents or responding to prompts (like Claude Code permission requests) without switching windows.
 
 ## Commands
 
@@ -95,7 +95,7 @@ Options: `--name`, `-d/--description`, `--ac`, `--dir`, `--command`.
 ```bash
 tukan peek a1b2c3d4             # print the full pane content to stdout
 tukan peek a1b2c3d4 -n 10       # last 10 non-blank lines only
-tukan peek a1b2c3d4 -n 3        # last 3 lines (like the TUI card preview)
+tukan peek a1b2c3d4 -n 3        # last 3 non-blank lines only
 ```
 
 Captures and prints the current terminal content of a card's tmux window. Useful for AI agents or scripts that need to read what a process is showing without switching to it.

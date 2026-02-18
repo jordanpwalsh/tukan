@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
 import { getTmuxState, detectCurrentSession, captureAllPaneContents } from "./tmux/client.js";
 import { readSessionState, writeSessionState, migrateConfig } from "./state/store.js";
-import { defaultConfig, COL_IN_PROGRESS } from "./board/types.js";
+import { defaultConfig } from "./board/types.js";
 import { computePaneHashes } from "./board/activity.js";
 import { reconcileConfig } from "./board/derive.js";
 import { App } from "./ui/App.js";
@@ -72,6 +72,8 @@ async function launchTui(sessionArg?: string) {
       }
     }
 
+    let initialPaneHashes: Record<string, string> | undefined;
+
     if (allPaneIds.length > 0 && Object.keys(savedHashes).length > 0) {
       const freshContents = await captureAllPaneContents(serverName, allPaneIds);
       const freshHashes = computePaneHashes(freshContents);
@@ -86,20 +88,22 @@ async function launchTui(sessionArg?: string) {
         }
       }
 
-      // Only reset timestamps for windows whose panes changed
-      for (const card of Object.values(config.cards)) {
-        if (card.columnId === COL_IN_PROGRESS && card.windowId && lastChangeTimes[card.windowId] !== undefined) {
-          if (changedWindows.has(card.windowId)) {
-            lastChangeTimes[card.windowId] = now;
-          }
+      // Reset timestamps for ALL windows whose panes changed (not just cards)
+      for (const [windowId, _time] of Object.entries(lastChangeTimes)) {
+        if (changedWindows.has(windowId)) {
+          lastChangeTimes[windowId] = now;
         }
       }
+
+      // Pass fresh hashes to App so the first poll can detect changes
+      initialPaneHashes = {};
+      for (const [paneId, hash] of freshHashes) {
+        initialPaneHashes[paneId] = hash;
+      }
     } else {
-      // No saved hashes — fall back to resetting all (first launch)
-      for (const card of Object.values(config.cards)) {
-        if (card.columnId === COL_IN_PROGRESS && card.windowId && lastChangeTimes[card.windowId] !== undefined) {
-          lastChangeTimes[card.windowId] = now;
-        }
+      // No saved hashes — reset all timestamps (first launch)
+      for (const windowId of Object.keys(lastChangeTimes)) {
+        lastChangeTimes[windowId] = now;
       }
     }
 
@@ -114,6 +118,7 @@ async function launchTui(sessionArg?: string) {
         initialCursor={lastCursor}
         initialLastChangeTimes={lastChangeTimes}
         initialActiveWindows={activeWindows}
+        initialPaneHashes={initialPaneHashes}
         onSave={handleSave}
         onAttach={(args) => {
           attachArgs = args;

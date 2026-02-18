@@ -104,11 +104,9 @@ tukan refresh                   # sync activity state
 | `r` | Resolve (move to Done) |
 | `q` | Quit |
 
-### Pane preview
+### Pane interaction
 
-When a card's tmux window goes idle (no output changes for 5+ seconds), Tukan shows the last few lines of the pane content directly on the card. This lets you see what a process is waiting for — like a Claude Code permission prompt or a script asking for input — without switching windows.
-
-To read or respond from the CLI:
+Read or respond to a card's pane content from the CLI — useful for seeing what a process is waiting for (like a Claude Code permission prompt) or for AI agents:
 
 ```sh
 tukan peek <card>               # print the full pane content

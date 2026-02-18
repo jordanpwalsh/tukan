@@ -70,19 +70,14 @@ export function Card({ card, selected, width }: CardProps) {
   const command = card.command || "shell";
   const dir = card.workingDir ? shortenPath(card.workingDir) : "";
 
-  // Show idle time for started cards that aren't spinning
-  const showIdle = card.started && !card.spinning && card.idleTime != null;
+  // Show idle time for started cards that aren't spinning or active
+  const showIdle = card.started && !card.spinning && !card.active && card.idleTime != null;
 
   const selColor = card.started ? "cyan" : "yellow";
 
   // Build fixed-width title line so inverse highlight fills the entire row
   const innerWidth = width - 4; // border (2) + padding (2)
   const { prefix, paddedName, suffix } = buildTitleLine(indicator, card.name, card.displayId, innerWidth);
-
-  // Truncate preview lines to fit card width
-  const previewLines = card.panePreview?.map((line) =>
-    line.length > innerWidth ? line.slice(0, innerWidth - 1) + "\u2026" : line
-  ) ?? [];
 
   const titleRow = selected ? (
     <Text bold color={selColor} inverse wrap="truncate">
@@ -114,14 +109,6 @@ export function Card({ card, selected, width }: CardProps) {
       <Text dimColor wrap="truncate">
         {command}{showIdle ? ` · ${formatIdleTime(card.idleTime!)}` : ""}
       </Text>
-      {previewLines.length > 0 && (
-        <Box flexDirection="column">
-          <Text dimColor>{"─".repeat(Math.min(innerWidth, 20))}</Text>
-          {previewLines.map((line, i) => (
-            <Text key={i} color="gray" wrap="truncate">{line}</Text>
-          ))}
-        </Box>
-      )}
     </Box>
   );
 }
