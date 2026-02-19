@@ -21,6 +21,7 @@ import {
   resolveCardInConfig,
   editCardInConfig,
   columnIdFromName,
+  columnNameFromId,
 } from "./board/card-ops.js";
 import { buildCardTemplate, parseCardTemplate } from "./board/card-template.js";
 import type { BoardConfig, Card } from "./board/types.js";
@@ -515,6 +516,53 @@ export function createProgram(): Command {
       if (!hasOutput) {
         console.log("No cards.");
       }
+    });
+
+  program
+    .command("show")
+    .description("Show details for a specific card")
+    .argument("<card>", "Card name or ID prefix")
+    .option("--json", "Output as JSON")
+    .option("-s, --session <name>", "Session name")
+    .action(async (query: string, opts: { json?: boolean; session?: string }) => {
+      const ctx = await loadContext(opts.session);
+      const result = resolveCard(ctx.config.cards, query);
+      if (!result.ok) {
+        console.error(result.error);
+        process.exitCode = 1;
+        return;
+      }
+      const { id, card } = result;
+
+      // Check live status
+      const tmux = await getTmuxState(ctx.serverName, ctx.sessionName);
+      const liveWindowIds = new Set<string>();
+      for (const session of tmux.sessions) {
+        for (const win of session.windows) liveWindowIds.add(win.id);
+      }
+      const live = !!(card.windowId && liveWindowIds.has(card.windowId));
+
+      const column = columnNameFromId(card.columnId);
+      const commandDef = ctx.config.commands.find((c) => c.id === card.command);
+
+      if (opts.json) {
+        console.log(JSON.stringify({ ...card, column, live }, null, 2));
+        return;
+      }
+
+      console.log(`Name:        ${card.name}`);
+      console.log(`ID:          ${id}`);
+      console.log(`Column:      ${column}`);
+      console.log(`Status:      ${live ? "live" : card.startedAt && !card.windowId ? "closed" : card.startedAt ? "started" : "unstarted"}`);
+      if (card.description) console.log(`Description: ${card.description}`);
+      if (card.acceptanceCriteria) console.log(`AC:          ${card.acceptanceCriteria}`);
+      console.log(`Dir:         ${card.dir}`);
+      console.log(`Command:     ${commandDef?.label ?? card.command}${card.customCommand ? ` (${card.customCommand})` : ""}`);
+      if (card.worktree) console.log(`Worktree:    ${card.worktreePath ?? "yes"}`);
+      if (card.windowId) console.log(`Window ID:   ${card.windowId}`);
+      console.log(`Created:     ${new Date(card.createdAt).toLocaleString()}`);
+      if (card.startedAt) console.log(`Started:     ${new Date(card.startedAt).toLocaleString()}`);
+      if (card.closedAt) console.log(`Closed:      ${new Date(card.closedAt).toLocaleString()}`);
     });
 
   program
