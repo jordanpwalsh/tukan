@@ -68,8 +68,9 @@ Indicators show window/activity status, not card existence. Virtual cards (unsta
 
 ## CLI Commands
 
-- `tukan add <name>` create card, `tukan start <card>` start card, `tukan stop <card>` stop card
+- `tukan add <name>` create card, `tukan start <card>` start card (`--wait` to block and stream pane changes, `--json` for NDJSON events), `tukan stop <card>` stop card
 - `tukan resolve <card>` move to Done, `tukan edit <card>` edit card
 - `tukan peek <card>` print a card's current pane content (`-n N` for last N non-blank lines)
 - `tukan send <card> <text>` send keystrokes to a card's tmux pane (`--no-enter` to skip Enter)
+- `tukan show <card>` print card details (name, description, AC, column, dir, status, timestamps); `--json` for structured output
 - `tukan list` list cards, `tukan refresh` sync activity, `tukan sessions` list sessions

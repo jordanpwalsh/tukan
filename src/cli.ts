@@ -7,15 +7,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getTmuxState, detectCurrentSession, execTmuxCommand, execTmuxCommandWithOutput } from "./tmux/client.js";
 import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "./tmux/create.js";
-import { readSessionState, writeSessionState, migrateConfig } from "./state/store.js";
+import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames } from "./state/store.js";
 import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
-import { getIdlePromotions, getReviewDemotionsByTime, IDLE_PROMOTE_MS } from "./board/activity.js";
+import { getIdlePromotions, getReviewDemotionsByTime, IDLE_PROMOTE_MS, hashContent } from "./board/activity.js";
 import { detectServerName } from "./index.js";
 import {
   createCard,
   addCardToConfig,
   resolveCard,
+  resolveCardAcrossSessions,
   markCardStarted,
   markCardStopped,
   resolveCardInConfig,
@@ -25,6 +26,7 @@ import {
 } from "./board/card-ops.js";
 import { buildCardTemplate, parseCardTemplate } from "./board/card-template.js";
 import type { BoardConfig, Card } from "./board/types.js";
+import type { SessionState } from "./state/types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +57,154 @@ async function loadContext(sessionFlag?: string): Promise<Context> {
 
 async function saveConfig(ctx: Context, config: BoardConfig): Promise<void> {
   writeSessionState(ctx.sessionName, { board: config, workingDir: ctx.workingDir });
+}
+
+/** Load all sessions' cards (migrated). */
+async function loadAllSessionCards(): Promise<{
+  sessions: Map<string, SessionState>;
+  cardsBySession: Map<string, Record<string, Card>>;
+}> {
+  const sessions = await readAllSessions();
+  const cardsBySession = new Map<string, Record<string, Card>>();
+  for (const [name, state] of sessions) {
+    const config = migrateConfig(state.board as unknown as Record<string, unknown>);
+    cardsBySession.set(name, config.cards);
+  }
+  return { sessions, cardsBySession };
+}
+
+/** Resolve a card query, searching across sessions if needed. */
+async function loadContextForCard(
+  query: string,
+  sessionFlag?: string,
+): Promise<{ ctx: Context; id: string; card: Card } | null> {
+  if (sessionFlag) {
+    const ctx = await loadContext(sessionFlag);
+    const result = resolveCard(ctx.config.cards, query);
+    if (!result.ok) {
+      console.error(result.error);
+      process.exitCode = 1;
+      return null;
+    }
+    return { ctx, id: result.id, card: result.card };
+  }
+
+  // Try auto-detected session first
+  const ctx = await loadContext();
+  const localResult = resolveCard(ctx.config.cards, query);
+  if (localResult.ok) {
+    return { ctx, id: localResult.id, card: localResult.card };
+  }
+
+  // Fall back to scanning all sessions
+  const { cardsBySession } = await loadAllSessionCards();
+  const result = resolveCardAcrossSessions(cardsBySession, query);
+  if (!result.ok) {
+    console.error(result.error);
+    process.exitCode = 1;
+    return null;
+  }
+
+  // Load full context for the matched session
+  const matchCtx = await loadContext(result.sessionName);
+  return { ctx: matchCtx, id: result.id, card: result.card };
+}
+
+function stripTrailingBlanks(raw: string): string {
+  const lines = raw.split("\n");
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+  return lines.join("\n");
+}
+
+async function watchCardPane(
+  serverName: string | undefined,
+  windowId: string,
+  cardId: string,
+  cardName: string,
+  json: boolean,
+): Promise<void> {
+  const POLL_MS = 500;
+  let prevHash = "";
+  let emittedSnapshot = false;
+  let aborted = false;
+
+  const onSignal = () => { aborted = true; };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+
+  try {
+    if (json) {
+      console.log(JSON.stringify({
+        type: "start",
+        cardId,
+        windowId,
+        name: cardName,
+        timestamp: Date.now(),
+      }));
+    }
+
+    // Brief delay for window to initialize
+    await new Promise((r) => setTimeout(r, 300));
+
+    while (!aborted) {
+      let raw: string;
+      try {
+        const args: string[] = [];
+        if (serverName) args.push("-L", serverName);
+        args.push("capture-pane", "-p", "-t", windowId);
+        raw = (await execFileAsync("tmux", args)).stdout;
+      } catch {
+        // Window is gone
+        if (json) {
+          console.log(JSON.stringify({
+            type: "closed",
+            cardId,
+            windowId,
+            exitReason: "window_closed",
+            timestamp: Date.now(),
+          }));
+        } else {
+          console.log("--- closed ---");
+        }
+        return;
+      }
+
+      const hash = hashContent(raw);
+      if (hash !== prevHash) {
+        prevHash = hash;
+        const content = stripTrailingBlanks(raw);
+        if (json) {
+          console.log(JSON.stringify({
+            type: "snapshot",
+            content,
+            timestamp: Date.now(),
+          }));
+        } else {
+          if (emittedSnapshot) console.log("---");
+          console.log(content);
+          emittedSnapshot = true;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+
+    // Aborted by signal
+    if (json) {
+      console.log(JSON.stringify({
+        type: "closed",
+        cardId,
+        windowId,
+        exitReason: "interrupted",
+        timestamp: Date.now(),
+      }));
+    }
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+  }
 }
 
 export function createProgram(): Command {
@@ -96,16 +246,13 @@ export function createProgram(): Command {
     .command("start")
     .description("Start a card (create tmux window, move to In Progress)")
     .argument("<card>", "Card name or ID prefix")
+    .option("-w, --wait", "Block and stream pane state changes until the window closes")
+    .option("--json", "Output as JSON (NDJSON events with --wait)")
     .option("-s, --session <name>", "Session name")
-    .action(async (query: string, opts: { session?: string }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { id, card } = result;
+    .action(async (query: string, opts: { session?: string; wait?: boolean; json?: boolean }) => {
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
 
       if (card.windowId) {
         console.error(`Card "${card.name}" is already started (window ${card.windowId})`);
@@ -160,7 +307,19 @@ export function createProgram(): Command {
 
       const newConfig = markCardStarted(ctx.config, id, newWindowId);
       await saveConfig(ctx, newConfig);
-      console.log(`Started "${card.name}" → window ${newWindowId}`);
+
+      // Output start confirmation (--wait --json defers to watchCardPane's start event)
+      if (!opts.wait || !opts.json) {
+        if (opts.json) {
+          console.log(JSON.stringify({ cardId: id, windowId: newWindowId, name: card.name }));
+        } else {
+          console.log(`Started "${card.name}" → window ${newWindowId}`);
+        }
+      }
+
+      if (opts.wait) {
+        await watchCardPane(ctx.serverName, newWindowId, id, card.name, !!opts.json);
+      }
     });
 
   program
@@ -169,14 +328,9 @@ export function createProgram(): Command {
     .argument("<card>", "Card name or ID prefix")
     .option("-s, --session <name>", "Session name")
     .action(async (query: string, opts: { session?: string }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { id, card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
 
       if (card.windowId) {
         const killArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
@@ -197,14 +351,9 @@ export function createProgram(): Command {
     .option("-f, --force", "Force resolve even with uncommitted worktree changes")
     .option("-s, --session <name>", "Session name")
     .action(async (query: string, opts: { session?: string; merge?: boolean; force?: boolean }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { id, card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
       const shouldMerge = opts.merge !== false && card.worktree;
 
       // Check for uncommitted changes in the worktree
@@ -265,14 +414,9 @@ export function createProgram(): Command {
     .option("--command <type>", "New command ID (e.g. shell, claude)")
     .option("-s, --session <name>", "Session name")
     .action(async (query: string, opts: Record<string, string | undefined>) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { id, card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
 
       // Check if any edit flags were provided
       const editFlags = ["name", "description", "ac", "dir", "command"];
@@ -341,14 +485,9 @@ export function createProgram(): Command {
     .option("--json", "Output as JSON")
     .option("-s, --session <name>", "Session name")
     .action(async (query: string, opts: { session?: string; tail?: string; json?: boolean }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, card } = resolved;
 
       if (!card.windowId) {
         console.error(`Card "${card.name}" has no live window. Start it first.`);
@@ -395,14 +534,9 @@ export function createProgram(): Command {
     .option("-s, --session <name>", "Session name")
     .option("--no-enter", "Don't append Enter after the text")
     .action(async (query: string, textParts: string[], opts: { session?: string; enter?: boolean }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, card } = resolved;
 
       if (!card.windowId) {
         console.error(`Card "${card.name}" has no live window. Start it first.`);
@@ -432,9 +566,6 @@ export function createProgram(): Command {
     .option("--json", "Output as JSON")
     .option("-s, --session <name>", "Session name")
     .action(async (opts: { column?: string; all?: boolean; json?: boolean; session?: string }) => {
-      const ctx = await loadContext(opts.session);
-      const { config } = ctx;
-
       // Build column filter
       let filterColId: string | null = null;
       if (opts.column) {
@@ -446,8 +577,30 @@ export function createProgram(): Command {
         }
       }
 
-      // Get tmux state for live window status
-      const tmux = await getTmuxState(ctx.serverName, ctx.sessionName);
+      // Collect cards: single session (with -s) or all sessions
+      type AnnotatedCard = Card & { _sessionName: string };
+      const allCards: AnnotatedCard[] = [];
+      let multiSession = false;
+      const columns = defaultConfig().columns;
+
+      if (opts.session) {
+        const ctx = await loadContext(opts.session);
+        for (const card of Object.values(ctx.config.cards)) {
+          allCards.push({ ...card, _sessionName: ctx.sessionName });
+        }
+      } else {
+        const { cardsBySession } = await loadAllSessionCards();
+        multiSession = cardsBySession.size > 1;
+        for (const [sessionName, cards] of cardsBySession) {
+          for (const card of Object.values(cards)) {
+            allCards.push({ ...card, _sessionName: sessionName });
+          }
+        }
+      }
+
+      // Get tmux state for live window status (all windows on the server)
+      const serverName = detectServerName();
+      const tmux = await getTmuxState(serverName);
       const liveWindowIds = new Set<string>();
       for (const session of tmux.sessions) {
         for (const win of session.windows) {
@@ -456,30 +609,33 @@ export function createProgram(): Command {
       }
 
       // Group cards by column
-      const columnCards = new Map<string, Card[]>();
-      for (const col of config.columns) {
+      const columnCards = new Map<string, AnnotatedCard[]>();
+      for (const col of columns) {
         columnCards.set(col.id, []);
       }
 
-      for (const card of Object.values(config.cards)) {
-        const colId = card.columnId;
-        const bucket = columnCards.get(colId);
+      for (const card of allCards) {
+        const bucket = columnCards.get(card.columnId);
         if (bucket) bucket.push(card);
       }
 
       if (opts.json) {
-        const result: Array<{ id: string; title: string; cards: Array<Card & { live: boolean }> }> = [];
-        for (const col of config.columns) {
+        const result: Array<{ id: string; title: string; cards: Array<Card & { live: boolean; sessionName: string }> }> = [];
+        for (const col of columns) {
           if (filterColId !== null && col.id !== filterColId) continue;
           if (col.id === COL_DONE && !opts.all && filterColId !== COL_DONE) continue;
           const cards = columnCards.get(col.id) ?? [];
           result.push({
             id: col.id,
             title: col.title,
-            cards: cards.map((card) => ({
-              ...card,
-              live: !!(card.windowId && liveWindowIds.has(card.windowId)),
-            })),
+            cards: cards.map((card) => {
+              const { _sessionName, ...rest } = card;
+              return {
+                ...rest,
+                sessionName: _sessionName,
+                live: !!(card.windowId && liveWindowIds.has(card.windowId)),
+              };
+            }),
           });
         }
         console.log(JSON.stringify(result, null, 2));
@@ -487,7 +643,7 @@ export function createProgram(): Command {
       }
 
       let hasOutput = false;
-      for (const col of config.columns) {
+      for (const col of columns) {
         if (filterColId !== null && col.id !== filterColId) continue;
         if (col.id === COL_DONE && !opts.all && filterColId !== COL_DONE) continue;
         const cards = columnCards.get(col.id) ?? [];
@@ -509,7 +665,8 @@ export function createProgram(): Command {
           } else if (card.startedAt && !card.windowId) {
             indicator = "\u25C7"; // ◇ — closed
           }
-          console.log(`  ${indicator} ${card.id.slice(0, 8)}  ${card.name}`);
+          const suffix = multiSession ? `  [${card._sessionName}]` : "";
+          console.log(`  ${indicator} ${card.id.slice(0, 8)}  ${card.name}${suffix}`);
         }
       }
 
@@ -525,14 +682,9 @@ export function createProgram(): Command {
     .option("--json", "Output as JSON")
     .option("-s, --session <name>", "Session name")
     .action(async (query: string, opts: { json?: boolean; session?: string }) => {
-      const ctx = await loadContext(opts.session);
-      const result = resolveCard(ctx.config.cards, query);
-      if (!result.ok) {
-        console.error(result.error);
-        process.exitCode = 1;
-        return;
-      }
-      const { id, card } = result;
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
 
       // Check live status
       const tmux = await getTmuxState(ctx.serverName, ctx.sessionName);
@@ -570,67 +722,110 @@ export function createProgram(): Command {
     .description("Update board state (reconcile windows, promote idle cards) and exit")
     .option("-s, --session <name>", "Session name")
     .action(async (opts: { session?: string }) => {
-      const ctx = await loadContext(opts.session);
-      const existingSession = await readSessionState(ctx.sessionName);
-      const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
+      // Determine which sessions to refresh
+      const sessionNames = opts.session
+        ? [opts.session]
+        : await listSessionNames();
 
-      const now = Date.now();
-
-      // Promote idle in-progress cards to review
-      const idlePromotions = getIdlePromotions(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
-      // Demote active review cards back to in-progress
-      const reviewDemotions = getReviewDemotionsByTime(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
-
-      if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
-        const newCards = { ...ctx.config.cards };
-        for (const cardId of idlePromotions) {
-          newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
-        }
-        for (const cardId of reviewDemotions) {
-          newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
-        }
-        ctx.config = { ...ctx.config, cards: newCards };
+      if (sessionNames.length === 0) {
+        // Fall back to auto-detected session
+        sessionNames.push(undefined as unknown as string);
       }
 
-      await saveConfig(ctx, ctx.config);
+      const multi = sessionNames.length > 1;
+      let anyChanges = false;
 
-      // Report what happened
-      const reconciled = Object.values(ctx.config.cards).filter((c) => c.closedAt && !c.windowId);
-      if (idlePromotions.length === 0 && reviewDemotions.length === 0 && reconciled.length === 0) {
+      for (const sName of sessionNames) {
+        const ctx = await loadContext(sName);
+        const existingSession = await readSessionState(ctx.sessionName);
+        const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
+        const prefix = multi ? `[${ctx.sessionName}] ` : "";
+
+        const now = Date.now();
+
+        const idlePromotions = getIdlePromotions(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
+        const reviewDemotions = getReviewDemotionsByTime(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
+
+        if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
+          const newCards = { ...ctx.config.cards };
+          for (const cardId of idlePromotions) {
+            newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
+          }
+          for (const cardId of reviewDemotions) {
+            newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
+          }
+          ctx.config = { ...ctx.config, cards: newCards };
+        }
+
+        await saveConfig(ctx, ctx.config);
+
+        if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
+          anyChanges = true;
+          for (const cardId of idlePromotions) {
+            console.log(`${prefix}Promoted "${ctx.config.cards[cardId].name}" → Review (idle)`);
+          }
+          for (const cardId of reviewDemotions) {
+            console.log(`${prefix}Demoted "${ctx.config.cards[cardId].name}" → In Progress (active)`);
+          }
+        }
+      }
+
+      if (!anyChanges) {
         console.log("Board is up to date.");
-      } else {
-        for (const cardId of idlePromotions) {
-          console.log(`Promoted "${ctx.config.cards[cardId].name}" → Review (idle)`);
-        }
-        for (const cardId of reviewDemotions) {
-          console.log(`Demoted "${ctx.config.cards[cardId].name}" → In Progress (active)`);
-        }
       }
     });
 
   program
     .command("sessions")
-    .description("List tmux sessions")
+    .description("List tukan sessions (tmux + state files)")
     .action(async () => {
       const serverName = detectServerName();
+
+      // Get live tmux sessions
+      const tmuxSessions = new Map<string, { windows: string; attached: boolean }>();
       try {
         const args: string[] = [];
         if (serverName) args.push("-L", serverName);
         args.push("list-sessions", "-F", "#{session_name}\t#{session_windows}\t#{session_attached}");
         const { stdout } = await execFileAsync("tmux", args);
-        const lines = stdout.trim().split("\n").filter(Boolean);
-        if (lines.length === 0) {
-          console.log("No tmux sessions found.");
-          return;
-        }
-        console.log("tmux sessions:");
-        for (const line of lines) {
+        for (const line of stdout.trim().split("\n").filter(Boolean)) {
           const [name, windows, attached] = line.split("\t");
-          const attachedLabel = attached === "1" ? " (attached)" : "";
-          console.log(`  ${name}  ${windows} window${windows === "1" ? "" : "s"}${attachedLabel}`);
+          tmuxSessions.set(name, { windows, attached: attached === "1" });
         }
       } catch {
-        console.log("No tmux server running.");
+        // No tmux server running
+      }
+
+      // Get state file sessions with card counts
+      const stateNames = await listSessionNames();
+      const cardCounts = new Map<string, number>();
+      for (const name of stateNames) {
+        const state = await readSessionState(name);
+        if (state?.board) {
+          const config = migrateConfig(state.board as unknown as Record<string, unknown>);
+          cardCounts.set(name, Object.keys(config.cards).length);
+        }
+      }
+
+      // Merge: all session names from both sources
+      const allNames = new Set([...tmuxSessions.keys(), ...stateNames]);
+      if (allNames.size === 0) {
+        console.log("No sessions found.");
+        return;
+      }
+
+      for (const name of [...allNames].sort()) {
+        const tmux = tmuxSessions.get(name);
+        const cards = cardCounts.get(name) ?? 0;
+        const parts: string[] = [];
+        if (tmux) {
+          parts.push(`${tmux.windows} window${tmux.windows === "1" ? "" : "s"}`);
+          if (tmux.attached) parts.push("attached");
+        } else {
+          parts.push("no tmux session");
+        }
+        parts.push(`${cards} card${cards === 1 ? "" : "s"}`);
+        console.log(`  ${name}  ${parts.join(", ")}`);
       }
     });
 

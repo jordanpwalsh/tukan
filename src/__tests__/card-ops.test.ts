@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   findCards,
   resolveCard,
+  findCardsAcrossSessions,
+  resolveCardAcrossSessions,
   createCard,
   addCardToConfig,
   markCardStarted,
@@ -241,5 +243,105 @@ describe("columnNameFromId", () => {
 
   it("returns Unknown for invalid IDs", () => {
     expect(columnNameFromId("99")).toBe("Unknown");
+  });
+});
+
+describe("findCardsAcrossSessions", () => {
+  const sessionCards = new Map<string, Record<string, Card>>([
+    ["webapp", {
+      "aaaa-1111": makeCard({ id: "aaaa-1111", name: "Fix login bug" }),
+      "aaaa-2222": makeCard({ id: "aaaa-2222", name: "Setup CI" }),
+    }],
+    ["api-server", {
+      "bbbb-1111": makeCard({ id: "bbbb-1111", name: "Refactor cache" }),
+      "bbbb-2222": makeCard({ id: "bbbb-2222", name: "Fix login timeout" }),
+    }],
+  ]);
+
+  it("finds card in correct session", () => {
+    const matches = findCardsAcrossSessions(sessionCards, "Setup CI");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].sessionName).toBe("webapp");
+    expect(matches[0].card.name).toBe("Setup CI");
+  });
+
+  it("aggregates matches across sessions", () => {
+    const matches = findCardsAcrossSessions(sessionCards, "login");
+    expect(matches).toHaveLength(2);
+    const sessions = matches.map((m) => m.sessionName).sort();
+    expect(sessions).toEqual(["api-server", "webapp"]);
+  });
+
+  it("returns empty for no matches", () => {
+    const matches = findCardsAcrossSessions(sessionCards, "nonexistent");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("finds by UUID prefix across sessions", () => {
+    const matches = findCardsAcrossSessions(sessionCards, "bbbb-1111");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].sessionName).toBe("api-server");
+    expect(matches[0].card.name).toBe("Refactor cache");
+  });
+});
+
+describe("resolveCardAcrossSessions", () => {
+  const sessionCards = new Map<string, Record<string, Card>>([
+    ["webapp", {
+      "aaaa-1111": makeCard({ id: "aaaa-1111", name: "Fix login bug" }),
+      "aaaa-2222": makeCard({ id: "aaaa-2222", name: "Setup CI" }),
+    }],
+    ["api-server", {
+      "bbbb-1111": makeCard({ id: "bbbb-1111", name: "Refactor cache" }),
+    }],
+  ]);
+
+  it("resolves unique card", () => {
+    const result = resolveCardAcrossSessions(sessionCards, "Refactor cache");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.sessionName).toBe("api-server");
+      expect(result.card.name).toBe("Refactor cache");
+    }
+  });
+
+  it("errors on cross-session ambiguity with session names in message", () => {
+    // Add a card with overlapping name to api-server
+    const ambiguous = new Map<string, Record<string, Card>>([
+      ["webapp", {
+        c1: makeCard({ id: "c1", name: "Fix bug" }),
+      }],
+      ["api-server", {
+        c2: makeCard({ id: "c2", name: "Fix bug" }),
+      }],
+    ]);
+    const result = resolveCardAcrossSessions(ambiguous, "Fix bug");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("webapp");
+      expect(result.error).toContain("api-server");
+      expect(result.error).toContain("-s");
+    }
+  });
+
+  it("works identically to resolveCard with single-session map", () => {
+    const single = new Map<string, Record<string, Card>>([
+      ["webapp", {
+        "aaaa-1111": makeCard({ id: "aaaa-1111", name: "Setup CI" }),
+        "aaaa-2222": makeCard({ id: "aaaa-2222", name: "Fix bug" }),
+      }],
+    ]);
+    const result = resolveCardAcrossSessions(single, "Setup CI");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.sessionName).toBe("webapp");
+      expect(result.card.name).toBe("Setup CI");
+    }
+  });
+
+  it("errors on no match", () => {
+    const result = resolveCardAcrossSessions(sessionCards, "nonexistent");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("No card found");
   });
 });

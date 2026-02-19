@@ -14,12 +14,22 @@ Use Tukan when you need to break coding work into discrete tasks, execute them i
 
 **Do not write code directly.** Your job is to move cards, not write code. When working on coding tasks:
 
-1. **Start the card** → Claude Code (or the configured command) launches in the tmux window and does the work
-2. **Peek frequently** → use `tukan peek <id> -n 15` every minute or two to check progress — don't just say "I'll check back in a bit" without setting an actual timer or cron job
-3. **Respond to prompts** → use `tukan send <id> <text>` to answer permission requests or provide input
+1. **Start the card with `--wait`** → `tukan start <id> --wait --json` launches the tmux window and streams pane changes as NDJSON events so you can react immediately
+2. **Respond to prompts** → use `tukan send <id> <text>` to answer permission requests or provide input when you see them in the stream
+3. **Detect completion** → the stream emits a `closed` event when the window exits
 4. **Resolve when done** → move the card to Done once the work is complete
 
-**Always set a real check interval:** Use `cron` to poll every 1-2 minutes while a card is active. Never rely on the user to prompt you to check.
+**Prefer `--wait` over polling:** The `--wait` flag streams pane changes in real-time (500ms poll), so you don't need `cron` or manual `peek` loops. If you can't use `--wait` (e.g. monitoring multiple cards), fall back to `tukan peek <id> -n 15` every 1-2 minutes via `cron`.
+
+**Async messaging surfaces (Telegram, etc.) — use a sub-agent, not a poll loop:**
+When monitoring a card from a messaging channel, do NOT use `process(poll)` in a loop — it blocks the main session and causes status messages to arrive in bursts. Instead:
+
+1. **Spawn a sub-agent** via `sessions_spawn` to run `tukan start <id> --wait --json` and watch the stream
+2. The sub-agent handles prompts (via `tukan send`) and waits for completion
+3. It reports back **only when done or when input is needed** — one clean message, not a running commentary
+4. Use `delivery.mode: "announce"` on the spawn so the result is delivered automatically
+
+This gives you a single "done" notification with a summary, instead of 10 status updates arriving all at once.
 
 If a card's `--command` isn't set to `claude`, edit it before starting: `tukan edit <id> --command claude`. Coding cards should almost always use `--command claude`.
 
@@ -50,6 +60,19 @@ Output shows an indicator per card:
 
 Each line shows the card's 8-char ID prefix and name.
 
+### Show card details
+
+```bash
+tukan show a1b2c3d4             # print full card details
+tukan show a1b2c3d4 --json      # output as JSON
+```
+
+Prints name, ID, column, status (live/closed/started/unstarted), description, acceptance criteria, directory, command, worktree info, window ID, and timestamps. The `--json` flag outputs the full card object with added `column` and `live` fields.
+
+Options:
+- `--json` — output as JSON
+- `-s, --session <name>` — target session
+
 ### Add a card
 
 ```bash
@@ -71,9 +94,21 @@ Options:
 
 ```bash
 tukan start a1b2c3d4          # use the 8-char ID prefix from add/list
+tukan start a1b2c3d4 --wait   # start and stream pane changes until window closes
+tukan start a1b2c3d4 --wait --json  # stream as NDJSON events (for orchestrators)
 ```
 
 Creates a tmux window, moves card to In Progress. If the card has `--worktree`, a git worktree and branch are created first.
+
+Options:
+- `-w, --wait` — block after starting and continuously stream pane state changes to stdout. Exits when the window closes or on SIGINT. Replaces poll-based `peek` loops for orchestrators.
+- `--json` — with `--wait`: emit NDJSON events (`start`, `snapshot`, `closed`). Without `--wait`: output start confirmation as JSON.
+- `-s, --session <name>` — target session
+
+NDJSON event types (with `--wait --json`):
+- `{"type":"start","cardId":"...","windowId":"@5","name":"...","timestamp":...}` — emitted once at the beginning
+- `{"type":"snapshot","content":"...pane content...","timestamp":...}` — emitted on each pane content change
+- `{"type":"closed","cardId":"...","windowId":"@5","exitReason":"window_closed"|"interrupted","timestamp":...}` — emitted when the window closes or the watcher is interrupted
 
 ### Stop a card
 

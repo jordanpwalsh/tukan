@@ -1,4 +1,4 @@
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile, readdir, mkdir } from "node:fs/promises";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -168,4 +168,33 @@ function ensureCommands(config: BoardConfig): BoardConfig {
     return { ...config, commands, cards };
   }
   return config;
+}
+
+/** List all session names from the sessions directory (sorted). */
+export async function listSessionNames(): Promise<string[]> {
+  try {
+    const entries = await readdir(SESSIONS_DIR);
+    return entries
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.slice(0, -5))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Read all sessions in parallel. Returns Map<sessionName, SessionState>. */
+export async function readAllSessions(): Promise<Map<string, SessionState>> {
+  const names = await listSessionNames();
+  const results = await Promise.all(
+    names.map(async (name) => {
+      const state = await readSessionState(name);
+      return [name, state] as const;
+    }),
+  );
+  const map = new Map<string, SessionState>();
+  for (const [name, state] of results) {
+    if (state) map.set(name, state);
+  }
+  return map;
 }

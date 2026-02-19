@@ -7,8 +7,18 @@ export interface CardMatch {
   card: Card;
 }
 
+export interface MultiSessionCardMatch {
+  sessionName: string;
+  id: string;
+  card: Card;
+}
+
 export type ResolveResult =
   | { ok: true; id: string; card: Card }
+  | { ok: false; error: string };
+
+export type MultiSessionResolveResult =
+  | { ok: true; sessionName: string; id: string; card: Card }
   | { ok: false; error: string };
 
 /** Find cards matching a query (UUID, UUID prefix, or name). */
@@ -56,6 +66,36 @@ export function resolveCard(cards: Record<string, Card>, query: string): Resolve
     return { ok: false, error: `Ambiguous match for "${query}" — multiple cards found:\n${names}` };
   }
   return { ok: true, id: matches[0].id, card: matches[0].card };
+}
+
+/** Find cards matching a query across all sessions. */
+export function findCardsAcrossSessions(
+  sessionCards: Map<string, Record<string, Card>>,
+  query: string,
+): MultiSessionCardMatch[] {
+  const results: MultiSessionCardMatch[] = [];
+  for (const [sessionName, cards] of sessionCards) {
+    for (const match of findCards(cards, query)) {
+      results.push({ sessionName, id: match.id, card: match.card });
+    }
+  }
+  return results;
+}
+
+/** Resolve a query to exactly one card across all sessions. */
+export function resolveCardAcrossSessions(
+  sessionCards: Map<string, Record<string, Card>>,
+  query: string,
+): MultiSessionResolveResult {
+  const matches = findCardsAcrossSessions(sessionCards, query);
+  if (matches.length === 0) {
+    return { ok: false, error: `No card found matching "${query}"` };
+  }
+  if (matches.length === 1) {
+    return { ok: true, sessionName: matches[0].sessionName, id: matches[0].id, card: matches[0].card };
+  }
+  const names = matches.map((m) => `  ${m.id.slice(0, 8)} ${m.card.name} [${m.sessionName}]`).join("\n");
+  return { ok: false, error: `Ambiguous match for "${query}" — multiple cards found:\n${names}\nUse -s <session> to specify.` };
 }
 
 export interface AddCardOpts {
