@@ -110,6 +110,16 @@ async function loadContextForCard(
   return { ctx: matchCtx, id: result.id, card: result.card };
 }
 
+/** Pure idle-check: returns idleMs if threshold exceeded, else null. */
+export function checkIdle(
+  lastChangeAt: number,
+  now: number,
+  idleTimeoutMs: number,
+): number | null {
+  const idleMs = now - lastChangeAt;
+  return idleMs >= idleTimeoutMs ? idleMs : null;
+}
+
 function stripTrailingBlanks(raw: string): string {
   const lines = raw.split("\n");
   while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
@@ -124,11 +134,13 @@ async function watchCardPane(
   cardId: string,
   cardName: string,
   json: boolean,
+  idleTimeoutMs: number,
 ): Promise<void> {
   const POLL_MS = 500;
   let prevHash = "";
   let emittedSnapshot = false;
   let aborted = false;
+  let lastChangeAt = Date.now();
 
   const onSignal = () => { aborted = true; };
   process.on("SIGINT", onSignal);
@@ -172,19 +184,32 @@ async function watchCardPane(
       }
 
       const hash = hashContent(raw);
+      const now = Date.now();
       if (hash !== prevHash) {
         prevHash = hash;
+        lastChangeAt = now;
         const content = stripTrailingBlanks(raw);
         if (json) {
           console.log(JSON.stringify({
             type: "snapshot",
             content,
-            timestamp: Date.now(),
+            timestamp: now,
           }));
         } else {
           if (emittedSnapshot) console.log("---");
           console.log(content);
           emittedSnapshot = true;
+        }
+      } else if (json) {
+        const idleMs = checkIdle(lastChangeAt, now, idleTimeoutMs);
+        if (idleMs !== null) {
+          console.log(JSON.stringify({
+            type: "idle",
+            cardId,
+            windowId,
+            idleMs,
+            timestamp: now,
+          }));
         }
       }
 
@@ -318,7 +343,7 @@ export function createProgram(): Command {
       }
 
       if (opts.wait) {
-        await watchCardPane(ctx.serverName, newWindowId, id, card.name, !!opts.json);
+        await watchCardPane(ctx.serverName, newWindowId, id, card.name, !!opts.json, ctx.config.idleTimeoutMs ?? 3000);
       }
     });
 

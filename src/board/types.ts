@@ -31,6 +31,7 @@ export interface BoardConfig {
   columns: Array<{ id: string; title: string }>;
   cards: Record<string, Card>;  // cardId → Card
   commands: CommandDef[];
+  idleTimeoutMs?: number;       // idle threshold for --wait --json (default 3000)
 }
 
 export interface BoardCard {
@@ -80,5 +81,6 @@ export function defaultConfig(): BoardConfig {
     ],
     cards: {},
     commands: DEFAULT_COMMANDS,
+    idleTimeoutMs: 3000,
   };
 }
