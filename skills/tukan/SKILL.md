@@ -225,6 +225,93 @@ tukan peek e5f6a7b8 -n 5          # see what the card is waiting for
 tukan send e5f6a7b8 y             # approve the prompt
 ```
 
+## Card Watcher Sub-Agents
+
+When starting a card from an async messaging surface (Telegram, iMessage, etc.), spawn a **watcher sub-agent** instead of polling manually. The watcher runs `tukan start --wait --json`, handles prompts automatically, and reports back when done.
+
+### Watcher Templates
+
+Templates live in `watchers/` alongside this skill. Each command type has its own variant:
+
+| Template | Card command | Handles |
+|---|---|---|
+| `watchers/claude.md` | `claude` | Claude Code permissions, plan approval, safe Bash detection |
+| `watchers/shell.md` | `shell` | Interactive prompts, completion detection, error reporting |
+| `watchers/codex.md` | `codex` | Codex approval prompts, mode-aware (full-auto vs vanilla) |
+
+### How to Spawn a Watcher
+
+1. Look up the card to get its command type and details:
+   ```bash
+   tukan show <card_id> -s <session>
+   ```
+
+2. Read the matching watcher template (e.g., `watchers/claude.md` for claude cards).
+
+3. Replace the placeholders with card-specific values:
+
+   | Placeholder | Value |
+   |---|---|
+   | `{{CARD_ID}}` | Card ID (8-char prefix) |
+   | `{{CARD_NAME}}` | Card name |
+   | `{{SESSION}}` | Tukan session name |
+   | `{{DESCRIPTION}}` | Card description |
+   | `{{AC}}` | Acceptance criteria |
+
+4. Spawn via `sessions_spawn`:
+   ```json
+   {
+     "task": "<filled template text>",
+     "label": "tukan-watcher-<card_id>",
+     "cleanup": "keep",
+     "expectsCompletionMessage": true,
+     "model": "anthropic/claude-sonnet-4-6"
+   }
+   ```
+
+### User Interaction Flow
+
+The watcher handles safe prompts silently. When it needs human input:
+
+1. **Watcher** sends a message to the user describing what's needed
+2. **User** replies to the main session
+3. **Main session** relays the reply via `tukan send <card_id> <response> -s <session>`
+4. **Watcher** sees the pane update and continues watching
+
+The main session should recognize when a user's reply is meant for an active card and forward it. Context clues: the reply comes shortly after a watcher notification, or the user references the card by name/ID.
+
+### What Gets Auto-Approved (Claude Code Watcher)
+
+- File operations: Read, Write, Edit, Glob, Grep
+- Web tools: WebSearch, WebFetch
+- Safe Bash: git, npm/yarn/pnpm/bun, node, python, pip, cargo, go, make, test runners, linters, read-only shell commands
+- Planning/notebook tools: Task, NotebookEdit, TodoWrite
+
+### What Gets Surfaced to User
+
+- Plan approval requests (Claude shows a plan and asks to proceed)
+- Risky Bash: rm, sudo, kill, docker, curl piped to sh, git push --force
+- Unrecognized prompts
+- Errors the agent can't resolve after multiple retries
+
+### Example: Starting a Claude Card from Telegram
+
+User sends: "Start the login-fix card"
+
+Orchestrator flow:
+```bash
+# 1. Find the card
+tukan list -s myapp
+
+# 2. Card is 'a1b2c3d4', command is 'claude'
+tukan show a1b2c3d4 -s myapp
+
+# 3. Read watchers/claude.md, fill placeholders, spawn
+sessions_spawn task:"<filled template>" label:"tukan-watcher-a1b2c3d4" ...
+```
+
+Result: User gets one message when the card needs input, and one message when it's done. No polling loop, no burst of status updates.
+
 ## Tips
 
 - **Always use card IDs** (the 8-char prefix printed by `add` and `list`) for `start`, `stop`, `resolve`, `edit`, and `send` commands. IDs are deterministic; name matching can be ambiguous.
