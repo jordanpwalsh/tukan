@@ -39,8 +39,12 @@ export function buildTitleLine(
   return { prefix, paddedName, suffix };
 }
 
+const SCROLL_PAUSE_TICKS = 6; // ~1.5s pause at start and end
+const SCROLL_TICK_MS = 250;
+
 export function Card({ card, selected, width }: CardProps) {
   const [spinnerIndex, setSpinnerIndex] = useState(0);
+  const [scrollTick, setScrollTick] = useState(0);
 
   useEffect(() => {
     if (!card.spinning) return;
@@ -67,6 +71,39 @@ export function Card({ card, selected, width }: CardProps) {
     indicator = "○";
   }
 
+  // Compute available space for title to determine if scrolling is needed
+  const innerWidth = width - 4; // border (2) + padding (2)
+  const prefixLen = indicator ? 2 : 1; // "X " or " "
+  const suffixLen = 1 + card.displayId.length; // " " + displayId
+  const available = Math.max(0, innerWidth - prefixLen - suffixLen);
+  const needsScroll = selected && card.name.length > available;
+
+  useEffect(() => {
+    if (!needsScroll) {
+      setScrollTick(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      const maxScroll = card.name.length - available;
+      const totalTicks = SCROLL_PAUSE_TICKS + maxScroll + SCROLL_PAUSE_TICKS;
+      setScrollTick((t) => (t + 1) % totalTicks);
+    }, SCROLL_TICK_MS);
+    return () => clearInterval(interval);
+  }, [needsScroll, card.name, available]);
+
+  // Derive scroll offset from tick counter
+  let scrollOffset = 0;
+  if (needsScroll) {
+    const maxScroll = card.name.length - available;
+    if (scrollTick < SCROLL_PAUSE_TICKS) {
+      scrollOffset = 0; // pause at start
+    } else if (scrollTick < SCROLL_PAUSE_TICKS + maxScroll) {
+      scrollOffset = scrollTick - SCROLL_PAUSE_TICKS; // scrolling
+    } else {
+      scrollOffset = maxScroll; // pause at end
+    }
+  }
+
   const command = card.command || "shell";
   const dir = card.workingDir ? shortenPath(card.workingDir) : "";
 
@@ -76,8 +113,8 @@ export function Card({ card, selected, width }: CardProps) {
   const selColor = card.started ? "cyan" : "yellow";
 
   // Build fixed-width title line so inverse highlight fills the entire row
-  const innerWidth = width - 4; // border (2) + padding (2)
-  const { prefix, paddedName, suffix } = buildTitleLine(indicator, card.name, card.displayId, innerWidth);
+  const scrolledName = needsScroll ? card.name.slice(scrollOffset) : card.name;
+  const { prefix, paddedName, suffix } = buildTitleLine(indicator, scrolledName, card.displayId, innerWidth);
 
   const titleRow = selected ? (
     <Text bold color={selColor} inverse wrap="truncate">
