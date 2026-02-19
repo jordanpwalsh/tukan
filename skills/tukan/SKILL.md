@@ -15,9 +15,11 @@ Use Tukan when you need to break coding work into discrete tasks, execute them i
 **Do not write code directly.** Your job is to move cards, not write code. When working on coding tasks:
 
 1. **Start the card** → Claude Code (or the configured command) launches in the tmux window and does the work
-2. **Peek periodically** → use `tukan peek <id> -n 10` to check progress
+2. **Peek frequently** → use `tukan peek <id> -n 15` every minute or two to check progress — don't just say "I'll check back in a bit" without setting an actual timer or cron job
 3. **Respond to prompts** → use `tukan send <id> <text>` to answer permission requests or provide input
 4. **Resolve when done** → move the card to Done once the work is complete
+
+**Always set a real check interval:** Use `cron` to poll every 1-2 minutes while a card is active. Never rely on the user to prompt you to check.
 
 If a card's `--command` isn't set to `claude`, edit it before starting: `tukan edit <id> --command claude`. Coding cards should almost always use `--command claude`.
 
