@@ -10,6 +10,17 @@ Use Tukan when you need to break coding work into discrete tasks, execute them i
 
 **When to use this skill**: You have coding work to plan and execute — create cards for each task, start them to get isolated workspaces, and resolve them when done.
 
+## Role: You Are the Orchestrator
+
+**Do not write code directly.** Your job is to move cards, not write code. When working on coding tasks:
+
+1. **Start the card** → Claude Code (or the configured command) launches in the tmux window and does the work
+2. **Peek periodically** → use `tukan peek <id> -n 10` to check progress
+3. **Respond to prompts** → use `tukan send <id> <text>` to answer permission requests or provide input
+4. **Resolve when done** → move the card to Done once the work is complete
+
+If a card's `--command` isn't set to `claude`, edit it before starting: `tukan edit <id> --command claude`. Coding cards should almost always use `--command claude`.
+
 ## Concepts
 
 - **Card**: A coding task with a name, description, acceptance criteria, working directory, and lifecycle state.
