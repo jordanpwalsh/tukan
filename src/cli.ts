@@ -337,8 +337,9 @@ export function createProgram(): Command {
     .description("Show the current pane content of a card's tmux window")
     .argument("<card>", "Card name or ID prefix")
     .option("-n, --tail <lines>", "Show only the last N non-blank lines")
+    .option("--json", "Output as JSON")
     .option("-s, --session <name>", "Session name")
-    .action(async (query: string, opts: { session?: string; tail?: string }) => {
+    .action(async (query: string, opts: { session?: string; tail?: string; json?: boolean }) => {
       const ctx = await loadContext(opts.session);
       const result = resolveCard(ctx.config.cards, query);
       if (!result.ok) {
@@ -359,6 +360,7 @@ export function createProgram(): Command {
       args.push("capture-pane", "-p", "-t", card.windowId);
       const raw = await execTmuxCommandWithOutput(args);
 
+      let output: string;
       if (opts.tail) {
         const n = parseInt(opts.tail, 10);
         if (isNaN(n) || n <= 0) {
@@ -367,14 +369,20 @@ export function createProgram(): Command {
           return;
         }
         const lines = raw.split("\n").map((l) => l.trimEnd()).filter((l) => l.length > 0);
-        console.log(lines.slice(-n).join("\n"));
+        output = lines.slice(-n).join("\n");
       } else {
         // Strip trailing blank lines
         const lines = raw.split("\n");
         while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
           lines.pop();
         }
-        console.log(lines.join("\n"));
+        output = lines.join("\n");
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ cardId: card.id, windowId: card.windowId, content: output }, null, 2));
+      } else {
+        console.log(output);
       }
     });
 
@@ -420,8 +428,9 @@ export function createProgram(): Command {
     .description("List cards grouped by column")
     .option("--column <name>", "Filter to a specific column")
     .option("-a, --all", "Include Done column")
+    .option("--json", "Output as JSON")
     .option("-s, --session <name>", "Session name")
-    .action(async (opts: { column?: string; all?: boolean; session?: string }) => {
+    .action(async (opts: { column?: string; all?: boolean; json?: boolean; session?: string }) => {
       const ctx = await loadContext(opts.session);
       const { config } = ctx;
 
@@ -455,6 +464,25 @@ export function createProgram(): Command {
         const colId = card.columnId;
         const bucket = columnCards.get(colId);
         if (bucket) bucket.push(card);
+      }
+
+      if (opts.json) {
+        const result: Array<{ id: string; title: string; cards: Array<Card & { live: boolean }> }> = [];
+        for (const col of config.columns) {
+          if (filterColId !== null && col.id !== filterColId) continue;
+          if (col.id === COL_DONE && !opts.all && filterColId !== COL_DONE) continue;
+          const cards = columnCards.get(col.id) ?? [];
+          result.push({
+            id: col.id,
+            title: col.title,
+            cards: cards.map((card) => ({
+              ...card,
+              live: !!(card.windowId && liveWindowIds.has(card.windowId)),
+            })),
+          });
+        }
+        console.log(JSON.stringify(result, null, 2));
+        return;
       }
 
       let hasOutput = false;
