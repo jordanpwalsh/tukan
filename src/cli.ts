@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getTmuxState, detectCurrentSession, execTmuxCommand, execTmuxCommandWithOutput } from "./tmux/client.js";
 import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "./tmux/create.js";
-import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames } from "./state/store.js";
+import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames, registerSession } from "./state/store.js";
 import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
 import { getIdlePromotions, getReviewDemotionsByTime, IDLE_PROMOTE_MS, hashContent } from "./board/activity.js";
@@ -45,12 +45,15 @@ async function loadContext(sessionFlag?: string): Promise<Context> {
     ?? basename(process.cwd());
 
   const tmux = await getTmuxState(serverName, sessionName);
-  const existingSession = await readSessionState(sessionName);
+  const existingSession = await readSessionState(sessionName, process.cwd());
   const rawConfig = existingSession?.board
     ? migrateConfig(existingSession.board as unknown as Record<string, unknown>)
     : defaultConfig();
   const config = reconcileConfig(rawConfig, tmux);
   const workingDir = existingSession?.workingDir ?? process.cwd();
+
+  // Auto-register session → project dir
+  registerSession(sessionName, workingDir);
 
   return { serverName, sessionName, config, workingDir };
 }
@@ -851,6 +854,53 @@ export function createProgram(): Command {
         }
         parts.push(`${cards} card${cards === 1 ? "" : "s"}`);
         console.log(`  ${name}  ${parts.join(", ")}`);
+      }
+    });
+
+  program
+    .command("register")
+    .description("Register a project directory with a session name")
+    .argument("[path]", "Project directory (defaults to cwd)")
+    .option("-s, --session <name>", "Session name (defaults to directory basename)")
+    .action(async (pathArg?: string, opts?: { session?: string }) => {
+      const { resolve } = await import("node:path");
+      const projectDir = pathArg ? resolve(pathArg) : process.cwd();
+      const sessionName = opts?.session ?? basename(projectDir);
+      registerSession(sessionName, projectDir);
+      console.log(`Registered "${sessionName}" → ${projectDir}`);
+    });
+
+  program
+    .command("migrate")
+    .description("Migrate all sessions from centralized to project-local storage")
+    .option("--dry-run", "Show what would be migrated without making changes")
+    .action(async (opts: { dryRun?: boolean }) => {
+      const names = await listSessionNames();
+      let count = 0;
+
+      for (const name of names) {
+        const state = await readSessionState(name);
+        if (!state) continue;
+
+        const dir = state.workingDir;
+        const cardsPath = join(dir, ".tukan.cards");
+
+        if (opts.dryRun) {
+          console.log(`Would migrate "${name}" → ${cardsPath}`);
+          count++;
+          continue;
+        }
+
+        // writeSessionState handles the split: .tukan.cards + ephemeral + registry
+        writeSessionState(name, state);
+        count++;
+        console.log(`Migrated "${name}" → ${cardsPath}`);
+      }
+
+      if (count === 0) {
+        console.log("No sessions to migrate.");
+      } else {
+        console.log(`\n${opts.dryRun ? "Would migrate" : "Migrated"} ${count} session(s).`);
       }
     });
 

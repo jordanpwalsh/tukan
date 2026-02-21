@@ -7,6 +7,7 @@ export interface CommandDef {
 export const DEFAULT_COMMANDS: CommandDef[] = [
   { id: "shell", label: "Shell", template: "" },
   { id: "claude", label: "Claude Code", template: "claude" },
+  { id: "opencode", label: "Open Code", template: "opencode" },
 ];
 
 export interface Card {

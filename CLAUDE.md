@@ -41,9 +41,14 @@ Tukan is a kanban-style task manager for tmux windows/sessions, built as a TUI. 
 
 ## State Management
 
+- **Project-local card storage**: Cards are stored in `<projectDir>/.tukan.cards` (a JSON file containing `BoardConfig`). This file is git-committable and travels with the repo.
+- **Registry**: `~/.config/tukan/registry.json` maps session names to project directories, so tukan can locate cards for any registered project from any cwd.
+- **Ephemeral state**: Runtime data (activity timestamps, pane hashes) stays in `~/.config/tukan/sessions/{sessionName}.json`, separate from card data.
+- **Auto-registration**: Sessions are automatically registered in the registry on first use. Explicit registration via `tukan register [path]`.
+- **Lazy migration**: Old centralized session files are auto-migrated to project-local `.tukan.cards` on first access.
 - `configRef` pattern: App.tsx uses `useRef(config)` updated each render so all callbacks read the latest config, avoiding stale closures across async operations and `useCallback` boundaries.
 - `onSave` accepts a full `SessionState` (board config + activity times). App.tsx builds this from `configRef.current` + `activityRef.current`, eliminating stale closure bugs.
-- Config is saved to `~/.config/tukan/state.json` via `writeSessionState`. The write is fire-and-forget (not awaited).
+- `writeSessionState` splits the write: board config → `.tukan.cards`, ephemeral → sessions dir, registry upsert. The write is fire-and-forget (not awaited).
 - `migrateConfig()` in `store.ts` converts the old format (`assignments` + `virtualCards` + `cardMeta`) to the unified `cards: Record` format at load time.
 
 ## Card Indicators
@@ -74,3 +79,5 @@ Indicators show window/activity status, not card existence. Virtual cards (unsta
 - `tukan send <card> <text>` send keystrokes to a card's tmux pane (`--no-enter` to skip Enter)
 - `tukan show <card>` print card details (name, description, AC, column, dir, status, timestamps); `--json` for structured output
 - `tukan list` list cards, `tukan refresh` sync activity, `tukan sessions` list sessions
+- `tukan register [path]` register a project directory (defaults to cwd); `-s` to set session name
+- `tukan migrate` migrate all sessions from centralized to project-local storage (`--dry-run` to preview)

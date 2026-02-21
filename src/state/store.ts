@@ -1,19 +1,100 @@
 import { readFile, readdir, mkdir } from "node:fs/promises";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { SessionState } from "./types.js";
+import type { SessionState, EphemeralState, Registry } from "./types.js";
 import type { BoardConfig, Card } from "../board/types.js";
 import { COL_DONE, DEFAULT_COMMANDS } from "../board/types.js";
 
 const STATE_DIR = join(homedir(), ".config", "tukan");
 const SESSIONS_DIR = join(STATE_DIR, "sessions");
+const REGISTRY_FILE = join(STATE_DIR, "registry.json");
 const LEGACY_STATE_FILE = join(STATE_DIR, "state.json");
+const PROJECT_CARDS_FILENAME = ".tukan.cards";
 
 function sessionFile(sessionName: string): string {
   return join(SESSIONS_DIR, `${sessionName}.json`);
 }
+
+// ---------------------------------------------------------------------------
+// Registry (session name → project directory)
+// ---------------------------------------------------------------------------
+
+export function readRegistry(): Registry {
+  try {
+    return JSON.parse(readFileSync(REGISTRY_FILE, "utf-8")) as Registry;
+  } catch {
+    return {};
+  }
+}
+
+export function writeRegistry(registry: Registry): void {
+  mkdirSync(STATE_DIR, { recursive: true });
+  writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2) + "\n");
+}
+
+export function registerSession(sessionName: string, projectDir: string): void {
+  const registry = readRegistry();
+  if (registry[sessionName]?.projectDir === projectDir) return; // already current
+  registry[sessionName] = { projectDir };
+  writeRegistry(registry);
+}
+
+export function lookupProjectDir(sessionName: string): string | null {
+  return readRegistry()[sessionName]?.projectDir ?? null;
+}
+
+export function listRegisteredSessions(): string[] {
+  return Object.keys(readRegistry()).sort();
+}
+
+// ---------------------------------------------------------------------------
+// Project-local cards (<projectDir>/.tukan.cards)
+// ---------------------------------------------------------------------------
+
+function projectCardsPath(projectDir: string): string {
+  return join(projectDir, PROJECT_CARDS_FILENAME);
+}
+
+async function readProjectCards(projectDir: string): Promise<BoardConfig | null> {
+  try {
+    const data = await readFile(projectCardsPath(projectDir), "utf-8");
+    const raw = JSON.parse(data);
+    return migrateConfig(raw as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+function writeProjectCards(projectDir: string, board: BoardConfig): void {
+  writeFileSync(projectCardsPath(projectDir), JSON.stringify(board, null, 2) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// Ephemeral state (~/.config/tukan/sessions/{name}.json — runtime only)
+// ---------------------------------------------------------------------------
+
+async function readEphemeralState(sessionName: string): Promise<EphemeralState> {
+  try {
+    const data = await readFile(sessionFile(sessionName), "utf-8");
+    const parsed = JSON.parse(data);
+    // Distinguish new ephemeral format (no 'board' key) from legacy
+    if (parsed.board) return {};
+    return parsed as EphemeralState;
+  } catch {
+    return {};
+  }
+}
+
+function writeEphemeralState(sessionName: string, state: EphemeralState): void {
+  mkdirSync(SESSIONS_DIR, { recursive: true });
+  writeFileSync(sessionFile(sessionName), JSON.stringify(state, null, 2) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// Legacy support
+// ---------------------------------------------------------------------------
 
 /** Migrate from single state.json to per-session files (one-time). */
 async function migrateLegacyState(): Promise<void> {
@@ -34,26 +115,124 @@ async function migrateLegacyState(): Promise<void> {
   } catch {}
 }
 
-export async function readSessionState(sessionName: string): Promise<SessionState | null> {
+/** Read from old-format session file (has 'board' key). */
+async function readLegacySessionState(sessionName: string): Promise<SessionState | null> {
   try {
     const data = await readFile(sessionFile(sessionName), "utf-8");
-    return JSON.parse(data) as SessionState;
+    const raw = JSON.parse(data);
+    if (raw.board) return raw as SessionState;
+    return null;
   } catch {
-    // Fall back to legacy state.json (triggers migration)
+    // Try the ancient single state.json migration
     await migrateLegacyState();
     try {
       const data = await readFile(sessionFile(sessionName), "utf-8");
-      return JSON.parse(data) as SessionState;
+      const raw = JSON.parse(data);
+      if (raw.board) return raw as SessionState;
+      return null;
     } catch {
       return null;
     }
   }
 }
 
-export function writeSessionState(sessionName: string, session: SessionState): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  writeFileSync(sessionFile(sessionName), JSON.stringify(session, null, 2) + "\n");
+/** Lazy-migrate a legacy session to project-local .tukan.cards. */
+function lazyMigrate(sessionName: string, legacy: SessionState): SessionState {
+  const board = migrateConfig(legacy.board as unknown as Record<string, unknown>);
+  const projectDir = legacy.workingDir;
+
+  // Write project-local cards
+  if (projectDir && existsSync(projectDir)) {
+    writeProjectCards(projectDir, board);
+  }
+
+  // Overwrite legacy session file with ephemeral-only state
+  writeEphemeralState(sessionName, {
+    lastChangeTimes: legacy.lastChangeTimes,
+    activeWindows: legacy.activeWindows,
+    paneHashes: legacy.paneHashes,
+  });
+
+  // Register in registry
+  if (projectDir) {
+    registerSession(sessionName, projectDir);
+  }
+
+  return {
+    board,
+    workingDir: projectDir,
+    lastChangeTimes: legacy.lastChangeTimes,
+    activeWindows: legacy.activeWindows,
+    paneHashes: legacy.paneHashes,
+  };
 }
+
+// ---------------------------------------------------------------------------
+// Public API (signatures preserved for backward compat)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read session state from split storage.
+ * Chain: registry → .tukan.cards → legacy fallback → lazy migrate.
+ * Optional cwd enables "cloned repo" detection.
+ */
+export async function readSessionState(
+  sessionName: string,
+  cwd?: string,
+): Promise<SessionState | null> {
+  let projectDir = lookupProjectDir(sessionName);
+
+  // If not in registry, check if cwd has .tukan.cards (cloned repo scenario)
+  if (!projectDir && cwd) {
+    const localCards = await readProjectCards(cwd);
+    if (localCards) {
+      registerSession(sessionName, cwd);
+      const ephemeral = await readEphemeralState(sessionName);
+      return { board: localCards, workingDir: cwd, ...ephemeral };
+    }
+  }
+
+  // Try legacy session file for lazy migration
+  if (!projectDir) {
+    const legacy = await readLegacySessionState(sessionName);
+    if (legacy) return lazyMigrate(sessionName, legacy);
+    return null;
+  }
+
+  // Read project-local cards
+  const board = await readProjectCards(projectDir);
+  if (!board) {
+    // Registry points here but no .tukan.cards — check legacy fallback
+    const legacy = await readLegacySessionState(sessionName);
+    if (legacy) return lazyMigrate(sessionName, legacy);
+    return null;
+  }
+
+  const ephemeral = await readEphemeralState(sessionName);
+  return { board, workingDir: projectDir, ...ephemeral };
+}
+
+/**
+ * Write session state: board → .tukan.cards, ephemeral → sessions dir, upsert registry.
+ */
+export function writeSessionState(sessionName: string, session: SessionState): void {
+  // Write project-local cards
+  writeProjectCards(session.workingDir, session.board);
+
+  // Write ephemeral state
+  writeEphemeralState(sessionName, {
+    lastChangeTimes: session.lastChangeTimes,
+    activeWindows: session.activeWindows,
+    paneHashes: session.paneHashes,
+  });
+
+  // Ensure registered
+  registerSession(sessionName, session.workingDir);
+}
+
+// ---------------------------------------------------------------------------
+// BoardConfig migration (pure function — unchanged)
+// ---------------------------------------------------------------------------
 
 /**
  * Migrate old BoardConfig format (assignments + virtualCards + cardMeta)
@@ -170,17 +349,25 @@ function ensureCommands(config: BoardConfig): BoardConfig {
   return config;
 }
 
-/** List all session names from the sessions directory (sorted). */
+// ---------------------------------------------------------------------------
+// Session listing (merges registry + legacy)
+// ---------------------------------------------------------------------------
+
+/** List all session names (registry keys + any legacy session files). */
 export async function listSessionNames(): Promise<string[]> {
+  const registeredNames = listRegisteredSessions();
+
+  // Also scan sessions dir for legacy files not yet migrated
+  let legacyNames: string[] = [];
   try {
     const entries = await readdir(SESSIONS_DIR);
-    return entries
+    legacyNames = entries
       .filter((f) => f.endsWith(".json"))
-      .map((f) => f.slice(0, -5))
-      .sort();
-  } catch {
-    return [];
-  }
+      .map((f) => f.slice(0, -5));
+  } catch {}
+
+  const all = new Set([...registeredNames, ...legacyNames]);
+  return [...all].sort();
 }
 
 /** Read all sessions in parallel. Returns Map<sessionName, SessionState>. */

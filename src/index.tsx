@@ -3,7 +3,7 @@ import { render } from "ink";
 import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
 import { getTmuxState, detectCurrentSession, captureAllPaneContents } from "./tmux/client.js";
-import { readSessionState, writeSessionState, migrateConfig } from "./state/store.js";
+import { readSessionState, writeSessionState, migrateConfig, registerSession } from "./state/store.js";
 import { defaultConfig } from "./board/types.js";
 import { computePaneHashes } from "./board/activity.js";
 import { reconcileConfig } from "./board/derive.js";
@@ -23,7 +23,7 @@ export function detectServerName(): string | undefined {
   return undefined;
 }
 
-const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "list", "show", "sessions", "refresh", "send", "peek", "help"]);
+const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "list", "show", "sessions", "refresh", "send", "peek", "register", "migrate", "help"]);
 
 async function launchTui(sessionArg?: string) {
   const insideTmux = !!process.env.TMUX;
@@ -44,12 +44,15 @@ async function launchTui(sessionArg?: string) {
     const tmux = await getTmuxState(serverName, sessionName ?? undefined);
 
     // Load or create board config (with migration from old format)
-    const existingSession = await readSessionState(sessionName);
+    const existingSession = await readSessionState(sessionName, process.cwd());
     const rawConfig = existingSession?.board
       ? migrateConfig(existingSession.board as unknown as Record<string, unknown>)
       : defaultConfig();
     const config = reconcileConfig(rawConfig, tmux);
     const workingDir = existingSession?.workingDir ?? process.cwd();
+
+    // Auto-register session → project dir
+    registerSession(sessionName, workingDir);
 
     let attachArgs: string[] | null = null;
     const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
