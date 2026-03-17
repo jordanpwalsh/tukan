@@ -190,6 +190,9 @@ export function NewCardModal({
 
   const focusedField = fields[focusIdx]?.id;
 
+  // Available width for text inputs: modal width minus border (2), padding (2), marginLeft (2)
+  const inputWidth = (modalWidth ?? 80) - 6;
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1} width={modalWidth}>
       <Box justifyContent="center" marginBottom={1}>
@@ -220,17 +223,17 @@ export function NewCardModal({
   function renderField(id: string, focused: boolean) {
     switch (id) {
       case "name":
-        return <TextInput value={name} onChange={setName} placeholder="Task name (required)" focus={focused} />;
+        return <TextInput value={name} onChange={setName} placeholder="Task name (required)" focus={focused} width={inputWidth} />;
       case "description":
-        return <TextInput value={description} onChange={setDescription} placeholder="Description" focus={focused} multiline minHeight={5} />;
+        return <TextInput value={description} onChange={setDescription} placeholder="Description" focus={focused} multiline minHeight={5} width={inputWidth} />;
       case "criteria":
-        return <TextInput value={acceptanceCriteria} onChange={setAcceptanceCriteria} placeholder="Acceptance criteria" focus={focused} multiline minHeight={5} />;
+        return <TextInput value={acceptanceCriteria} onChange={setAcceptanceCriteria} placeholder="Acceptance criteria" focus={focused} multiline minHeight={5} width={inputWidth} />;
       case "dir":
-        return <TextInput value={dir} onChange={setDir} placeholder={defaultDir} focus={focused} />;
+        return <TextInput value={dir} onChange={setDir} placeholder={defaultDir} focus={focused} width={inputWidth} />;
       case "worktree":
         return <SelectInput options={WORKTREE_OPTIONS} value={worktree ? "yes" : "no"} onChange={(v) => setWorktree(v === "yes")} focus={focused} />;
       case "worktreePath":
-        return <TextInput value={worktreePath} onChange={setWorktreePath} placeholder={`../${basename(dir)}-${sanitizeBranchName(name || "branch-name")}`} focus={focused} />;
+        return <TextInput value={worktreePath} onChange={setWorktreePath} placeholder={`../${basename(dir)}-${sanitizeBranchName(name || "branch-name")}`} focus={focused} width={inputWidth} />;
       case "command":
         return <SelectInput options={commandOptions} value={command} onChange={(v) => setCommand(v)} focus={focused} />;
       default:

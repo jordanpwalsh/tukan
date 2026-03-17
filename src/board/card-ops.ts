@@ -183,6 +183,12 @@ export interface EditCardFields {
   worktreePath?: string;
 }
 
+/** Remove a card from a config, returning a new config. */
+export function removeCardFromConfig(config: BoardConfig, cardId: string): BoardConfig {
+  const { [cardId]: _, ...rest } = config.cards;
+  return { ...config, cards: rest };
+}
+
 /** Edit card fields, returning a new config. */
 export function editCardInConfig(config: BoardConfig, cardId: string, fields: EditCardFields): BoardConfig {
   const card = config.cards[cardId];

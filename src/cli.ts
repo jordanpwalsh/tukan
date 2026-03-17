@@ -15,6 +15,7 @@ import { detectServerName } from "./index.js";
 import {
   createCard,
   addCardToConfig,
+  removeCardFromConfig,
   resolveCard,
   resolveCardAcrossSessions,
   markCardStarted,
@@ -503,6 +504,49 @@ export function createProgram(): Command {
       }
 
       console.log(`Updated "${opts.name ?? card.name}"`);
+    });
+
+  program
+    .command("move")
+    .description("Move a card to another session")
+    .argument("<card>", "Card name or ID prefix")
+    .argument("<target-session>", "Destination session name")
+    .option("-s, --session <name>", "Source session name")
+    .action(async (query: string, targetSession: string, opts: { session?: string }) => {
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx: srcCtx, id, card } = resolved;
+
+      if (srcCtx.sessionName === targetSession) {
+        console.error(`Card is already in session "${targetSession}".`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (card.windowId) {
+        console.error(`Card "${card.name}" has a live window. Stop it first.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      // Load the target session
+      const targetState = await readSessionState(targetSession);
+      if (!targetState) {
+        console.error(`Session "${targetSession}" not found. Register it first with: tukan register -s ${targetSession} <path>`);
+        process.exitCode = 1;
+        return;
+      }
+      const targetConfig = migrateConfig(targetState.board as unknown as Record<string, unknown>);
+
+      // Remove from source, add to target (update sessionName and dir)
+      const movedCard: Card = { ...card, sessionName: targetSession, dir: targetState.workingDir };
+      const newSrcConfig = removeCardFromConfig(srcCtx.config, id);
+      const newTargetConfig = addCardToConfig(targetConfig, movedCard);
+
+      await saveConfig(srcCtx, newSrcConfig);
+      writeSessionState(targetSession, { ...targetState, board: newTargetConfig });
+
+      console.log(`Moved "${card.name}" → ${targetSession}`);
     });
 
   program
