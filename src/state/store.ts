@@ -370,7 +370,7 @@ export async function listSessionNames(): Promise<string[]> {
   return [...all].sort();
 }
 
-/** Read all sessions in parallel. Returns Map<sessionName, SessionState>. */
+/** Read all sessions in parallel. Deduplicates by project directory. */
 export async function readAllSessions(): Promise<Map<string, SessionState>> {
   const names = await listSessionNames();
   const results = await Promise.all(
@@ -380,8 +380,13 @@ export async function readAllSessions(): Promise<Map<string, SessionState>> {
     }),
   );
   const map = new Map<string, SessionState>();
+  const seenDirs = new Set<string>();
   for (const [name, state] of results) {
-    if (state) map.set(name, state);
+    if (!state) continue;
+    // Skip duplicate sessions pointing to the same project directory
+    if (seenDirs.has(state.workingDir)) continue;
+    seenDirs.add(state.workingDir);
+    map.set(name, state);
   }
   return map;
 }
