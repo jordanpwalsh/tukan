@@ -34,7 +34,7 @@ Then run inside any tmux session:
 tukan
 ```
 
-Tukan auto-detects your tmux server. It stores state in `~/.config/tukan/state.json`.
+Tukan auto-detects your tmux server. Cards are stored in `.tukan.cards` in your project directory (git-committable). Ephemeral runtime state lives in `~/.config/tukan/`.
 
 ## Developer Setup
 
@@ -82,13 +82,21 @@ Manage cards without entering the TUI:
 ```sh
 tukan add "Fix login bug"       # create a card in Todo
 tukan start <card>              # start a card (creates tmux window)
+tukan stop <card>               # stop a card (kill window, mark closed)
 tukan resolve <card>            # move card to Done
+tukan edit <card>               # edit a card ($EDITOR or flags)
+tukan move <card> <session>     # move a card to another session
+tukan show <card>               # show card details (--json for structured output)
 tukan peek <card>               # show a card's current pane content
 tukan send <card> <text>        # send keystrokes to a card's pane
-tukan list                      # list cards
+tukan list                      # list cards (--column, --all, --json)
 tukan sessions                  # list tukan sessions
 tukan refresh                   # sync activity state
+tukan register [path]           # register a project directory (-s for session name)
+tukan migrate                   # migrate centralized → project-local storage (--dry-run)
 ```
+
+Most commands accept `-s <session>` to target a specific session.
 
 ### Keybindings
 
@@ -124,6 +132,16 @@ tukan send <card> --no-enter n  # send "n" without pressing Enter
 | `●` | Active window |
 | `◆` | Recent activity (green) |
 | `◇` | Closed (was started, window gone) |
+
+### Worktree support
+
+Cards can opt into git worktree creation — a sibling directory and branch are created when the card is started, and merged back when resolved:
+
+```sh
+tukan add "feature-x" --worktree
+tukan start feature-x             # creates worktree + branch
+tukan resolve feature-x           # merges worktree, cleans up
+```
 
 ## Architecture
 
