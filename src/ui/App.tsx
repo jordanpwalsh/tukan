@@ -10,7 +10,7 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { deriveBoard } from "../board/derive.js";
 import { moveLeft, moveRight, moveUp, moveDown, moveCard } from "../board/navigation.js";
 import { resolveSwitchArgs } from "../tmux/switch.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "../tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "../tmux/create.js";
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
 import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, getReviewDemotions, IDLE_PROMOTE_MS } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
@@ -546,11 +546,10 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         acceptanceCriteria: card.acceptanceCriteria,
       };
 
-      // Use new-session if no server/sessions exist yet, new-window otherwise
-      const hasServer = tmux.sessions.length > 0;
-      const args = hasServer
-        ? buildNewWindowArgs(windowOpts, serverName ?? "")
-        : buildNewSessionArgs(windowOpts, serverName ?? "");
+      // Create a session when the card's target session does not exist yet.
+      const args = shouldCreateNewSession(tmux, windowOpts.sessionName)
+        ? buildNewSessionArgs(windowOpts, serverName ?? "")
+        : buildNewWindowArgs(windowOpts, serverName ?? "");
 
       const newWindowId = await execTmuxCommandWithOutput(args);
 

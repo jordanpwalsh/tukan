@@ -199,7 +199,6 @@
       "command": "claude",
       "worktree": false,
       "createdAt": 1771216516124,
-      "windowId": "@56",
       "startedAt": 1771216518230,
       "closedAt": 1771216934153
     },
@@ -708,7 +707,37 @@
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "claude",
       "worktree": false,
-      "createdAt": 1773770129014
+      "createdAt": 1773770129014,
+      "startedAt": 1774800090570,
+      "closedAt": 1774800098278
+    },
+    "60a86dbb-0924-49ba-a85b-ae7f6638c4ba": {
+      "id": "60a86dbb-0924-49ba-a85b-ae7f6638c4ba",
+      "columnId": "4",
+      "name": "unassigned bug",
+      "description": "there is a bug where an unassigned tmux window got linked to an old card. I think this might be\rbecause the window id matched? can you look into this.",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/home/jordan/devel/personal/tukan",
+      "command": "claude",
+      "worktree": false,
+      "createdAt": 1774750723298,
+      "startedAt": 1774750725275,
+      "closedAt": 1774753094850
+    },
+    "9812abc8-159f-4509-80e2-5d72044ba98f": {
+      "id": "9812abc8-159f-4509-80e2-5d72044ba98f",
+      "columnId": "2",
+      "name": "Shell test",
+      "description": "shell test",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/home/jordan/devel/personal/tukan",
+      "command": "shell",
+      "worktree": false,
+      "createdAt": 1774800111343,
+      "windowId": "@15",
+      "startedAt": 1774800113499
     }
   },
   "commands": [

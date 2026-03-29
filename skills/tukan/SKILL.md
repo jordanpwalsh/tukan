@@ -12,7 +12,7 @@ Use Tukan when you need to break coding work into discrete tasks, execute them i
 
 ## Role: You Are the Orchestrator
 
-**Do not write code directly.** Your job is to move cards, not write code. When working on coding tasks:
+**Do not write code directly.** Your job is to move cards, not write code. Use only the `tukan` CLI to inspect or change card state. Do not inspect, explain, or edit backing files such as `.tukan.cards`; if the CLI cannot perform the operation, fail instead. When working on coding tasks:
 
 1. **Start the card with `--wait`** → `tukan start <id> --wait --json` launches the tmux window and streams pane changes as NDJSON events so you can react immediately
 2. **Respond to prompts** → use `tukan send <id> <text>` to answer permission requests or provide input when you see them in the stream
@@ -315,6 +315,6 @@ Result: User gets one message when the card needs input, and one message when it
 ## Tips
 
 - **Always use card IDs** (the 8-char prefix printed by `add` and `list`) for `start`, `stop`, `resolve`, `edit`, and `send` commands. IDs are deterministic; name matching can be ambiguous.
-- Use `tukan list` before other commands to see card IDs and current state.
+- Use `tukan list` before other commands to see card IDs and current state. Do not change directories to discover cards; use `tukan list` from the current shell and pass `-s <session>` when you need a specific session.
 - The `-s` flag on any command targets a specific session if auto-detection doesn't pick the right one.
 - Use `--dir` to point each card at the right project directory — cards for different projects can coexist on the same board.

@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getTmuxState, detectCurrentSession, execTmuxCommand, execTmuxCommandWithOutput } from "./tmux/client.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "./tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "./tmux/create.js";
 import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames, registerSession } from "./state/store.js";
 import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
@@ -319,10 +319,9 @@ export function createProgram(): Command {
       };
 
       const tmux = await getTmuxState(ctx.serverName, ctx.sessionName);
-      const hasServer = tmux.sessions.length > 0;
-      const args = hasServer
-        ? buildNewWindowArgs(windowOpts, ctx.serverName ?? "")
-        : buildNewSessionArgs(windowOpts, ctx.serverName ?? "");
+      const args = shouldCreateNewSession(tmux, windowOpts.sessionName)
+        ? buildNewSessionArgs(windowOpts, ctx.serverName ?? "")
+        : buildNewWindowArgs(windowOpts, ctx.serverName ?? "");
 
       const newWindowId = await execTmuxCommandWithOutput(args);
 

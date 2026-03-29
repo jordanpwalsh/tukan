@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName } from "../tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "../tmux/create.js";
 import type { NewWindowOpts } from "../tmux/create.js";
+import type { TmuxServer } from "../tmux/types.js";
 
 const serverName = "myserver";
 
@@ -57,7 +58,7 @@ describe("buildNewWindowArgs", () => {
       { ...baseOpts, commandTemplate: "vim ." },
       serverName,
     );
-    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'vim .; exec "${SHELL:-sh}"']);
+    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'vim . "$@"; exec "${SHELL:-sh}"', "--"]);
   });
 
   it("claude template with no description or criteria wraps bare claude", () => {
@@ -132,6 +133,30 @@ describe("buildNewSessionArgs", () => {
     expect(args.slice(-5)).toEqual([
       "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--", "Fix bug",
     ]);
+  });
+});
+
+describe("shouldCreateNewSession", () => {
+  it("returns false when the target session already exists", () => {
+    const tmux: TmuxServer = {
+      serverName: "myserver",
+      sessions: [
+        { id: "$1", name: "main", attached: true, windows: [] },
+      ],
+    };
+
+    expect(shouldCreateNewSession(tmux, "main")).toBe(false);
+  });
+
+  it("returns true when the server exists but the target session does not", () => {
+    const tmux: TmuxServer = {
+      serverName: "myserver",
+      sessions: [
+        { id: "$1", name: "other", attached: true, windows: [] },
+      ],
+    };
+
+    expect(shouldCreateNewSession(tmux, "main")).toBe(true);
   });
 });
 

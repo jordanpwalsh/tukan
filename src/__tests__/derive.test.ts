@@ -173,7 +173,7 @@ describe("reconcileConfig", () => {
     expect(reconciled.cards["card-2"].closedAt).toBeDefined();
   });
 
-  it("clears closedAt when window reappears", () => {
+  it("detaches closed card when window ID is reused (not 'reappeared')", () => {
     const server = makeServer([{ id: "@0", name: "editor" }]);
     const config: BoardConfig = {
       ...defaultConfig(),
@@ -183,7 +183,9 @@ describe("reconcileConfig", () => {
     };
     const reconciled = reconcileConfig(config, server);
 
-    expect(reconciled.cards["card-1"].closedAt).toBeUndefined();
+    // Card should be detached, not reclaimed
+    expect(reconciled.cards["card-1"].windowId).toBeUndefined();
+    expect(reconciled.cards["card-1"].closedAt).toBeDefined();
   });
 
   it("preserves columns unchanged", () => {
@@ -192,6 +194,94 @@ describe("reconcileConfig", () => {
     const reconciled = reconcileConfig(config, server);
 
     expect(reconciled.columns).toEqual(config.columns);
+  });
+
+  it("clears windowId when window is gone (prevents stale ID reuse)", () => {
+    const server = makeServer([]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({ id: "card-1", windowId: "@5", columnId: COL_IN_PROGRESS }),
+      },
+    };
+    const reconciled = reconcileConfig(config, server);
+
+    expect(reconciled.cards["card-1"].closedAt).toBeDefined();
+    expect(reconciled.cards["card-1"].windowId).toBeUndefined();
+  });
+
+  it("clears stale windowId on already-closed cards when window is gone", () => {
+    const server = makeServer([]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({
+          id: "card-1",
+          windowId: "@5",
+          columnId: COL_IN_PROGRESS,
+          closedAt: Date.now() - 5000,
+        }),
+      },
+    };
+    const reconciled = reconcileConfig(config, server);
+
+    expect(reconciled.cards["card-1"].closedAt).toBeDefined();
+    expect(reconciled.cards["card-1"].windowId).toBeUndefined();
+  });
+
+  it("detaches closed card when a new window reuses its ID", () => {
+    // A closed card still has windowId "@5". A new, unrelated window gets ID "@5".
+    // reconcileConfig should detach the card, not reclaim the window.
+    const server = makeServer([{ id: "@5", name: "new-shell" }]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({
+          id: "card-1",
+          name: "old-task",
+          windowId: "@5",
+          columnId: COL_IN_PROGRESS,
+          closedAt: Date.now() - 5000,
+        }),
+      },
+    };
+    const reconciled = reconcileConfig(config, server);
+
+    // Card should be detached — windowId cleared, closedAt preserved
+    expect(reconciled.cards["card-1"].windowId).toBeUndefined();
+    expect(reconciled.cards["card-1"].closedAt).toBeDefined();
+
+    // And deriveBoard should show the new window as uncategorized
+    const columns = deriveBoard(server, reconciled);
+    const unassigned = columns[0].cards;
+    expect(unassigned).toHaveLength(1);
+    expect(unassigned[0].uncategorized).toBe(true);
+    expect(unassigned[0].name).toBe("new-shell");
+  });
+
+  it("does not link a new window to an old closed card with reused ID", () => {
+    // Simulate: card-1 had window @5, window was closed and windowId cleared.
+    // A new tmux window gets ID @5 — it should appear as uncategorized, not linked to card-1.
+    const server = makeServer([{ id: "@5", name: "new-shell" }]);
+    const config: BoardConfig = {
+      ...defaultConfig(),
+      cards: {
+        "card-1": makeCard({
+          id: "card-1",
+          name: "old-task",
+          columnId: COL_IN_PROGRESS,
+          closedAt: Date.now() - 5000,
+          // windowId already cleared by reconcileConfig fix
+        }),
+      },
+    };
+    const columns = deriveBoard(server, config);
+
+    // The new window should be uncategorized, not linked to old card
+    const unassigned = columns[0].cards;
+    expect(unassigned).toHaveLength(1);
+    expect(unassigned[0].uncategorized).toBe(true);
+    expect(unassigned[0].name).toBe("new-shell");
   });
 
   it("returns same config reference when nothing changed", () => {

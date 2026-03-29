@@ -144,13 +144,17 @@ export function reconcileConfig(
       if (!windowNames.has(card.windowId)) {
         // Window gone — mark as closed
         if (!card.closedAt) {
-          cards[cardId] = { ...card, closedAt: Date.now() };
+          cards[cardId] = { ...card, windowId: undefined, closedAt: Date.now() };
+          changed = true;
+        } else if (card.windowId) {
+          // Already closed but windowId was never cleared (pre-fix cards)
+          cards[cardId] = { ...card, windowId: undefined };
           changed = true;
         }
       } else {
-        // Window reappeared — clear closedAt
         if (card.closedAt) {
-          cards[cardId] = { ...card, closedAt: undefined };
+          // Card was closed but a new window reused the same ID — detach
+          cards[cardId] = { ...card, windowId: undefined };
           changed = true;
         }
         // Update name from tmux if card still has a placeholder windowId name

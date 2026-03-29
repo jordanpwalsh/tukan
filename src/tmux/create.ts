@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { TmuxServer } from "./types.js";
 
 export function sanitizeBranchName(name: string): string {
   return name
@@ -31,6 +32,10 @@ export interface NewWindowOpts {
   commandTemplate: string;
   description?: string;
   acceptanceCriteria?: string;
+}
+
+export function shouldCreateNewSession(tmux: TmuxServer, sessionName: string): boolean {
+  return !tmux.sessions.some((session) => session.name === sessionName);
 }
 
 function buildPrompt(description?: string, acceptanceCriteria?: string): string {
@@ -78,13 +83,10 @@ function appendEnvVars(args: string[], opts: NewWindowOpts): void {
 function appendCommand(args: string[], opts: NewWindowOpts): void {
   appendEnvVars(args, opts);
   if (opts.commandTemplate) {
-    // Wrap commands so a shell remains after they exit
-    if (opts.commandTemplate === "claude") {
-      const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
-      args.push("sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--", ...(prompt ? [prompt] : []));
-    } else {
-      args.push("sh", "-c", opts.commandTemplate + '; exec "${SHELL:-sh}"');
-    }
+    const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
+    // Wrap commands so a shell remains after they exit.
+    // Pass the card prompt as a positional arg via "$@".
+    args.push("sh", "-c", opts.commandTemplate + ' "$@"; exec "${SHELL:-sh}"', "--", ...(prompt ? [prompt] : []));
   }
   // shell mode (empty template): always open a plain shell.
   // Description commands are sent via send-keys after window creation.
