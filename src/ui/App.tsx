@@ -10,7 +10,7 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { deriveBoard } from "../board/derive.js";
 import { moveLeft, moveRight, moveUp, moveDown, moveCard } from "../board/navigation.js";
 import { resolveSwitchArgs } from "../tmux/switch.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "../tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "../tmux/create.js";
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
 import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, getReviewDemotions, IDLE_PROMOTE_MS } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import type { TmuxServer } from "../tmux/types.js";
 import type { SessionState } from "../state/types.js";
 import { COL_UNASSIGNED, COL_TODO, COL_IN_PROGRESS, COL_REVIEW, COL_DONE, DEFAULT_COMMANDS, type BoardConfig, type BoardCard, type BoardColumn, type Card, type CommandDef, type Cursor } from "../board/types.js";
+import { buildResolveSteps, runResolveWorkflow, type ResolveStep } from "../worktree/resolve.js";
 
 /** Find the cursor position of a card by ID in derived board columns */
 function findCardCursor(columns: BoardColumn[], cardId: string): Cursor | null {
@@ -36,10 +37,36 @@ function findCardCursor(columns: BoardColumn[], cardId: string): Cursor | null {
   return null;
 }
 
+function buildResolveModal(card: BoardCard, mergeWorktree: boolean): Extract<ModalState, { mode: "confirm-resolve" }> {
+  return {
+    mode: "confirm-resolve",
+    card,
+    mergeWorktree,
+    running: false,
+    error: undefined,
+    steps: buildResolveSteps(!!card.windowId, mergeWorktree),
+  };
+}
+
+function stepMarker(status: ResolveStep["status"]): string {
+  switch (status) {
+    case "running":
+      return "[~]";
+    case "completed":
+      return "[x]";
+    case "failed":
+      return "[!]";
+    case "skipped":
+      return "[-]";
+    default:
+      return "[ ]";
+  }
+}
+
 type ModalState =
   | null
   | { mode: "create" }
-  | { mode: "confirm-resolve"; card: BoardCard; mergeWorktree: boolean; dirtyWarning?: boolean }
+  | { mode: "confirm-resolve"; card: BoardCard; mergeWorktree: boolean; running?: boolean; error?: string; steps: ResolveStep[] }
   | { mode: "confirm-remove"; card: BoardCard }
   | { mode: "confirm-start"; card: BoardCard }
   | { mode: "start"; card: BoardCard }
@@ -368,7 +395,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         if (bc && targetCol?.id === COL_DONE) {
           const cardRecord = configRef.current.cards[bc.cardId];
           if (bc.windowId || cardRecord?.worktree) {
-            setModal({ mode: "confirm-resolve", card: bc, mergeWorktree: !!cardRecord?.worktree });
+            setModal(buildResolveModal(bc, !!cardRecord?.worktree));
             return;
           }
         }
@@ -420,7 +447,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
             setModal({ mode: "confirm-remove", card: bc });
           } else {
             const cardRecord = configRef.current.cards[bc.cardId];
-            setModal({ mode: "confirm-resolve", card: bc, mergeWorktree: !!cardRecord?.worktree });
+            setModal(buildResolveModal(bc, !!cardRecord?.worktree));
           }
         }
       }
@@ -677,72 +704,67 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     const bc = modal.card;
     const cfg = configRef.current;
     const card = cfg.cards[bc.cardId];
+    if (modal.running) return;
 
-    // Check for uncommitted changes before merging worktree
-    if (modal.mergeWorktree && card?.worktree) {
-      try {
-        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-        const { stdout } = await execFileAsync("git", ["-C", wt.worktreePath, "status", "--porcelain"]);
-        if (stdout.trim()) {
-          setModal({ ...modal, mergeWorktree: false, dirtyWarning: true });
-          return;
-        }
-      } catch {
-        // If we can't check, skip the warning and proceed
+    setModal((current) => {
+      if (!current || current.mode !== "confirm-resolve" || current.card.cardId !== bc.cardId) return current;
+      return { ...current, running: true, error: undefined, steps: buildResolveSteps(!!bc.windowId, current.mergeWorktree) };
+    });
+
+    try {
+      await runResolveWorkflow({
+        dir: card?.dir ?? bc.workingDir,
+        cardName: card?.name ?? bc.name,
+        worktreePath: card?.worktreePath,
+        mergeWorktree: modal.mergeWorktree && !!card?.worktree,
+        windowId: bc.windowId ?? undefined,
+        execGit: (args) => execFileAsync("git", args),
+        killWindow: bc.windowId
+          ? async () => {
+              const killArgs = serverName ? ["-L", serverName] : [];
+              killArgs.push("kill-window", "-t", bc.windowId!);
+              await execTmuxCommand(killArgs);
+            }
+          : undefined,
+        finalize: async () => {
+          if (!card) return;
+          const resolvedCard: Card = {
+            ...card,
+            columnId: COL_DONE,
+            windowId: undefined,
+            closedAt: Date.now(),
+          };
+          const newConfig: BoardConfig = {
+            ...cfg,
+            cards: { ...cfg.cards, [bc.cardId]: resolvedCard },
+          };
+          updateConfig(newConfig);
+        },
+        onUpdate: (steps) => {
+          setModal((current) => {
+            if (!current || current.mode !== "confirm-resolve" || current.card.cardId !== bc.cardId) return current;
+            return { ...current, steps, running: true };
+          });
+        },
+      });
+
+      if (bc.windowId) {
+        getTmuxState(serverName, sessionName).then((t) => setTmux(t));
       }
-    }
 
-    // Kill tmux window if live
-    if (bc.windowId) {
-      const killArgs = serverName ? ["-L", serverName] : [];
-      killArgs.push("kill-window", "-t", bc.windowId);
-      execTmuxCommand(killArgs).catch(() => {});
-    }
-
-    // Merge worktree branch and remove worktree if requested
-    if (modal.mergeWorktree && card?.worktree) {
-      try {
-        const branch = sanitizeBranchName(card.name);
-        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-        const removeArgs = buildWorktreeRemoveArgs(card.dir, wt.worktreePath);
-        await execFileAsync("git", removeArgs);
-        const mergeSteps = buildWorktreeMergeArgs(card.dir, branch);
-        for (const step of mergeSteps) {
-          await execFileAsync("git", step);
-        }
-      } catch {
-        // Swallow errors — card still resolves
+      const col = columns[cursor.col];
+      const newMaxRow = Math.max(0, col.cards.length - 2);
+      if (cursor.row > newMaxRow) {
+        setCursor((c) => ({ ...c, row: newMaxRow }));
       }
+      setModal(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setModal((current) => {
+        if (!current || current.mode !== "confirm-resolve" || current.card.cardId !== bc.cardId) return current;
+        return { ...current, running: false, error: message };
+      });
     }
-
-    // Move card to Done column, clear windowId, set closedAt
-    if (card) {
-      const resolvedCard: Card = {
-        ...card,
-        columnId: COL_DONE,
-        windowId: undefined,
-        closedAt: Date.now(),
-      };
-      const newConfig: BoardConfig = {
-        ...cfg,
-        cards: { ...cfg.cards, [bc.cardId]: resolvedCard },
-      };
-      updateConfig(newConfig);
-    } else {
-      // Uncategorized window with no card record — just kill the window (already done above)
-    }
-
-    if (bc.windowId) {
-      getTmuxState(serverName, sessionName).then((t) => setTmux(t));
-    }
-
-    // Adjust cursor if it's now past the end
-    const col = columns[cursor.col];
-    const newMaxRow = Math.max(0, col.cards.length - 2);
-    if (cursor.row > newMaxRow) {
-      setCursor((c) => ({ ...c, row: newMaxRow }));
-    }
-    setModal(null);
   }, [modal, columns, cursor, serverName, sessionName, updateConfig, setCursor]);
 
   const confirmRemove = useCallback(() => {
@@ -766,12 +788,13 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
 
   useInput(
     (input, key) => {
+      if (modal?.mode === "confirm-resolve" && modal.running) return;
       if (input === "y" || key.return) {
         confirmResolve();
       } else if (input === "n" || key.escape) {
         setModal(null);
       } else if (input === " " && modal?.mode === "confirm-resolve") {
-        setModal({ ...modal, mergeWorktree: !modal.mergeWorktree, dirtyWarning: false });
+        setModal(buildResolveModal(modal.card, !modal.mergeWorktree));
       }
     },
     { isActive: modal?.mode === "confirm-resolve" },
@@ -833,13 +856,24 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
               <Text>{modal.mergeWorktree ? "[x]" : "[ ]"} Merge worktree branch and remove worktree</Text>
             </Box>
           )}
-          {modal.dirtyWarning && (
+          <Box marginTop={1} flexDirection="column">
+            {modal.steps.map((step) => (
+              <Text key={step.id}>
+                {stepMarker(step.status)} {step.label}{step.detail ? ` (${step.detail})` : ""}
+              </Text>
+            ))}
+          </Box>
+          {modal.error && (
             <Box marginTop={1}>
-              <Text color="yellow">Worktree has uncommitted changes — commit or stash first, or resolve without merge</Text>
+              <Text color="yellow">{modal.error}</Text>
             </Box>
           )}
           <Box marginTop={1}>
-            <Text dimColor>y/Enter confirm · n/Esc cancel{isWorktree ? " · Space toggle" : ""}</Text>
+            <Text dimColor>
+              {modal.running
+                ? "Resolving..."
+                : `y/Enter confirm · n/Esc cancel${isWorktree ? " · Space toggle" : ""}`}
+            </Text>
           </Box>
         </Box>
       );

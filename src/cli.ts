@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getTmuxState, detectCurrentSession, execTmuxCommand, execTmuxCommandWithOutput } from "./tmux/client.js";
-import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildWorktreeMergeArgs, buildWorktreeRemoveArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "./tmux/create.js";
+import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "./tmux/create.js";
 import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames, registerSession } from "./state/store.js";
 import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
@@ -28,8 +28,31 @@ import {
 import { buildCardTemplate, parseCardTemplate } from "./board/card-template.js";
 import type { BoardConfig, Card } from "./board/types.js";
 import type { SessionState } from "./state/types.js";
+import { buildResolveSteps, runResolveWorkflow, type ResolveStep } from "./worktree/resolve.js";
 
 const execFileAsync = promisify(execFile);
+
+function stepStatusPrefix(status: ResolveStep["status"]): string {
+  switch (status) {
+    case "running":
+      return "[~]";
+    case "completed":
+      return "[x]";
+    case "failed":
+      return "[!]";
+    case "skipped":
+      return "[-]";
+    default:
+      return "[ ]";
+  }
+}
+
+function printResolvePlan(steps: ResolveStep[]): void {
+  console.log("Resolve steps:");
+  for (const [index, step] of steps.entries()) {
+    console.log(`  ${index + 1}. ${step.label}`);
+  }
+}
 
 interface Context {
   serverName: string | undefined;
@@ -383,52 +406,49 @@ export function createProgram(): Command {
       if (!resolved) return;
       const { ctx, id, card } = resolved;
       const shouldMerge = opts.merge !== false && card.worktree;
+      const plan = buildResolveSteps(!!card.windowId, shouldMerge);
+      const previousStatuses = new Map<string, ResolveStep["status"]>();
 
-      // Check for uncommitted changes in the worktree
-      if (shouldMerge) {
-        const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-        try {
-          const { stdout } = await execFileAsync("git", ["-C", wt.worktreePath, "status", "--porcelain"]);
-          if (stdout.trim()) {
-            if (!opts.force) {
-              console.error(`Worktree has uncommitted changes. Commit or stash first, or use --force to resolve anyway.`);
-              process.exitCode = 1;
-              return;
+      console.log(`Resolving "${card.name}"`);
+      printResolvePlan(plan);
+
+      try {
+        await runResolveWorkflow({
+          dir: card.dir,
+          cardName: card.name,
+          worktreePath: card.worktreePath,
+          mergeWorktree: shouldMerge,
+          windowId: card.windowId,
+          force: opts.force,
+          execGit: (args) => execFileAsync("git", args),
+          killWindow: card.windowId
+            ? async () => {
+                const killArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
+                killArgs.push("kill-window", "-t", card.windowId!);
+                await execTmuxCommand(killArgs);
+              }
+            : undefined,
+          finalize: async () => {
+            const newConfig = resolveCardInConfig(ctx.config, id);
+            await saveConfig(ctx, newConfig);
+          },
+          onUpdate: (steps) => {
+            for (const step of steps) {
+              const prev = previousStatuses.get(step.id);
+              if (prev === step.status) continue;
+              previousStatuses.set(step.id, step.status);
+              if (step.status === "pending") continue;
+              const suffix = step.detail ? `: ${step.detail}` : "";
+              console.log(`${stepStatusPrefix(step.status)} ${step.label}${suffix}`);
             }
-            console.warn(`Warning: resolving with uncommitted worktree changes (--force)`);
-          }
-        } catch {
-          // Worktree path may not exist — skip check
-        }
+          },
+        });
+        console.log(`Resolved "${card.name}" → Done`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Resolve stopped: ${msg}`);
+        process.exitCode = 1;
       }
-
-      if (card.windowId) {
-        const killArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
-        killArgs.push("kill-window", "-t", card.windowId);
-        await execTmuxCommand(killArgs).catch(() => {});
-      }
-
-      // Merge worktree branch and remove worktree
-      if (shouldMerge) {
-        try {
-          const branch = sanitizeBranchName(card.name);
-          const wt = buildWorktreeArgs(card.dir, card.name, card.worktreePath);
-          const removeArgs = buildWorktreeRemoveArgs(card.dir, wt.worktreePath);
-          await execFileAsync("git", removeArgs);
-          const mergeSteps = buildWorktreeMergeArgs(card.dir, branch);
-          for (const step of mergeSteps) {
-            await execFileAsync("git", step);
-          }
-          console.log(`Merged branch "${branch}" and removed worktree`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`Warning: worktree cleanup failed: ${msg}`);
-        }
-      }
-
-      const newConfig = resolveCardInConfig(ctx.config, id);
-      await saveConfig(ctx, newConfig);
-      console.log(`Resolved "${card.name}" → Done`);
     });
 
   program
