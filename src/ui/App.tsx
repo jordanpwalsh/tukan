@@ -1004,7 +1004,14 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         </Box>
       ) : (
         <>
-          <Board columns={columns} cursor={cursor} width={width} height={boardHeight} onScrollChange={handleScrollChange} />
+          <Board
+            columns={columns}
+            commands={configRef.current.commands ?? DEFAULT_COMMANDS}
+            cursor={cursor}
+            width={width}
+            height={boardHeight}
+            onScrollChange={handleScrollChange}
+          />
           <StatusBar width={width} />
         </>
       )}

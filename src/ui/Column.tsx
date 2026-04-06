@@ -1,19 +1,20 @@
 import { Box, Text } from "ink";
 import { Card } from "./Card.js";
-import type { BoardColumn } from "../board/types.js";
+import type { BoardColumn, CommandDef } from "../board/types.js";
 
 const CARD_HEIGHT = 5; // border top/bottom + up to 3 content lines
 const COLUMN_CHROME = 3; // 2 for column border + 1 for header
 
 interface ColumnProps {
   column: BoardColumn;
+  commands: CommandDef[];
   focused: boolean;
   selectedRow: number;
   width: number;
   height: number;
 }
 
-export function Column({ column, focused, selectedRow, width, height }: ColumnProps) {
+export function Column({ column, commands, focused, selectedRow, width, height }: ColumnProps) {
   const borderColor = focused ? "cyan" : "gray";
   const cardWidth = Math.max(width - 2, 12); // inside the column border
 
@@ -67,6 +68,7 @@ export function Column({ column, focused, selectedRow, width, height }: ColumnPr
         <Card
           key={card.cardId}
           card={card}
+          commands={commands}
           selected={focused && (scrollOffset + i) === selectedRow}
           width={cardWidth}
         />

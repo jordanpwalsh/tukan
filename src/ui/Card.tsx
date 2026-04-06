@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import type { BoardCard } from "../board/types.js";
+import type { BoardCard, CommandDef } from "../board/types.js";
 
 interface CardProps {
   card: BoardCard;
+  commands: CommandDef[];
   selected: boolean;
   width: number;
 }
@@ -24,6 +25,10 @@ function formatIdleTime(seconds: number): string {
   return `idle ${Math.floor(seconds / 3600)}h`;
 }
 
+export function resolveCommandLabel(commandId: string, commands: CommandDef[]): string {
+  return commands.find((command) => command.id === commandId)?.label ?? commandId;
+}
+
 /** Build a fixed-width title line: " indicator name   displayId " */
 export function buildTitleLine(
   indicator: string,
@@ -42,7 +47,7 @@ export function buildTitleLine(
 const SCROLL_PAUSE_TICKS = 6; // ~1.5s pause at start and end
 const SCROLL_TICK_MS = 250;
 
-export function Card({ card, selected, width }: CardProps) {
+export function Card({ card, commands, selected, width }: CardProps) {
   const [spinnerIndex, setSpinnerIndex] = useState(0);
   const [scrollTick, setScrollTick] = useState(0);
 
@@ -104,7 +109,7 @@ export function Card({ card, selected, width }: CardProps) {
     }
   }
 
-  const command = card.command || "shell";
+  const command = resolveCommandLabel(card.command || "shell", commands);
   const dir = card.workingDir ? shortenPath(card.workingDir) : "";
 
   // Show idle time for started cards that aren't spinning or active

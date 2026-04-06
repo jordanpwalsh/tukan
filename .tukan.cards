@@ -736,8 +736,22 @@
       "command": "shell",
       "worktree": false,
       "createdAt": 1774800111343,
-      "windowId": "@15",
-      "startedAt": 1774800113499
+      "startedAt": 1774800113499,
+      "closedAt": 1775437363543
+    },
+    "f6a49ce4-bee3-464c-8cb2-b7f486a6f4ca": {
+      "id": "f6a49ce4-bee3-464c-8cb2-b7f486a6f4ca",
+      "columnId": "4",
+      "name": "clean context helper",
+      "description": "The output of /context is too verbose. Change it to show only token information (characters isnt very useful) and make it more readable.",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1775437431264,
+      "startedAt": 1775437522770,
+      "closedAt": 1775437538802
     }
   },
   "commands": [
@@ -755,6 +769,11 @@
       "id": "cmd-13b53dc2",
       "label": "Open Code",
       "template": "opencode"
+    },
+    {
+      "id": "cmd-e35a7bf0",
+      "label": "Codex",
+      "template": "codex"
     }
   ]
 }

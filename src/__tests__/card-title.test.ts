@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildTitleLine } from "../ui/Card.js";
+import { buildTitleLine, resolveCommandLabel } from "../ui/Card.js";
+import { DEFAULT_COMMANDS } from "../board/types.js";
 
 describe("buildTitleLine", () => {
   it("produces a string that fills exactly innerWidth", () => {
@@ -44,5 +45,13 @@ describe("buildTitleLine", () => {
     const full = prefix + paddedName + suffix;
     // Should not crash; name gets truncated to nothing
     expect(full.length).toBe(Math.max(5, prefix.length + suffix.length));
+  });
+
+  it("resolves command IDs to friendly labels", () => {
+    expect(resolveCommandLabel("claude", DEFAULT_COMMANDS)).toBe("Claude Code");
+  });
+
+  it("falls back to the raw command ID when no label exists", () => {
+    expect(resolveCommandLabel("unknown-cmd", DEFAULT_COMMANDS)).toBe("unknown-cmd");
   });
 });

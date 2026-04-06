@@ -1,20 +1,21 @@
 import { useEffect } from "react";
 import { Box, Text } from "ink";
 import { Column } from "./Column.js";
-import type { BoardColumn, Cursor } from "../board/types.js";
+import type { BoardColumn, CommandDef, Cursor } from "../board/types.js";
 
 const MAX_VISIBLE = 4;
 const MIN_COL_WIDTH = 32;
 
 interface BoardProps {
   columns: BoardColumn[];
+  commands: CommandDef[];
   cursor: Cursor;
   width: number;
   height: number;
   onScrollChange?: (colScroll: number) => void;
 }
 
-export function Board({ columns, cursor, width, height, onScrollChange }: BoardProps) {
+export function Board({ columns, commands, cursor, width, height, onScrollChange }: BoardProps) {
   const total = columns.length;
   const maxByWidth = Math.max(1, Math.floor(width / MIN_COL_WIDTH));
   const visible = Math.min(total, MAX_VISIBLE, maxByWidth);
@@ -64,6 +65,7 @@ export function Board({ columns, cursor, width, height, onScrollChange }: BoardP
         <Column
           key={col.id}
           column={col}
+          commands={commands}
           focused={scrollOffset + i === cursor.col}
           selectedRow={cursor.row}
           width={colWidth}
