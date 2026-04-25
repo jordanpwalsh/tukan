@@ -818,6 +818,18 @@
       "worktree": false,
       "windowId": "@3",
       "createdAt": 1777093389099
+    },
+    "fffd92e0-c36a-4800-99a8-ede02b616eab": {
+      "id": "fffd92e0-c36a-4800-99a8-ede02b616eab",
+      "columnId": "1",
+      "name": "tukan watch",
+      "description": "add a tukan watch to watch the output and transform it into processable events.",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1777095656624
     }
   },
   "commands": [
