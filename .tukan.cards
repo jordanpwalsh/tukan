@@ -805,6 +805,19 @@
       "createdAt": 1777090444484,
       "windowId": "@0",
       "startedAt": 1777091063432
+    },
+    "84193468-cfa9-40b6-ad5f-08cb0a8872d3": {
+      "id": "84193468-cfa9-40b6-ad5f-08cb0a8872d3",
+      "name": "zsh",
+      "description": "",
+      "acceptanceCriteria": "",
+      "columnId": "1",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "shell",
+      "worktree": false,
+      "windowId": "@3",
+      "createdAt": 1777093389099
     }
   },
   "commands": [
