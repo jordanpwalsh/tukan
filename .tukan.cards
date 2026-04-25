@@ -782,7 +782,7 @@
     },
     "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5": {
       "id": "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5",
-      "columnId": "1",
+      "columnId": "2",
       "name": "remember last card settings",
       "description": "remember the settigns for new cards (working directory, worktree, command)",
       "acceptanceCriteria": "",
@@ -790,7 +790,9 @@
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "cmd-e35a7bf0",
       "worktree": false,
-      "createdAt": 1777090368676
+      "createdAt": 1777090368676,
+      "windowId": "@1",
+      "startedAt": 1777129996035
     },
     "b5071aa0-6710-430c-9dfb-a36052fbcc7d": {
       "id": "b5071aa0-6710-430c-9dfb-a36052fbcc7d",
@@ -803,21 +805,22 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777090444484,
-      "windowId": "@0",
-      "startedAt": 1777091063432
+      "startedAt": 1777091063432,
+      "closedAt": 1777129981111
     },
     "84193468-cfa9-40b6-ad5f-08cb0a8872d3": {
       "id": "84193468-cfa9-40b6-ad5f-08cb0a8872d3",
       "name": "zsh",
       "description": "",
       "acceptanceCriteria": "",
-      "columnId": "1",
+      "columnId": "0",
       "sessionName": "tukan",
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "shell",
       "worktree": false,
-      "windowId": "@3",
-      "createdAt": 1777093389099
+      "windowId": "@0",
+      "createdAt": 1777093389099,
+      "startedAt": 1777129986117
     },
     "fffd92e0-c36a-4800-99a8-ede02b616eab": {
       "id": "fffd92e0-c36a-4800-99a8-ede02b616eab",
