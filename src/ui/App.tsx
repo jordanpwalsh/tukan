@@ -12,7 +12,7 @@ import { moveLeft, moveRight, moveUp, moveDown, moveCard } from "../board/naviga
 import { resolveSwitchArgs } from "../tmux/switch.js";
 import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildSendKeysArgs, sanitizeBranchName, shouldCreateNewSession } from "../tmux/create.js";
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
-import { computePaneHashes, detectChangedPanes, buildActivityMap, getIdlePromotions, getReviewDemotions, IDLE_PROMOTE_MS } from "../board/activity.js";
+import { computePaneHashes, detectChangedPanes, buildActivityMap } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -217,35 +217,6 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         saveState(configRef.current);
       }
 
-      // Compute changed window IDs for demotion check
-      const changedWindowIds = new Set<string>();
-      for (const paneId of changed) {
-        const windowId = paneToWindow.get(paneId);
-        if (windowId) changedWindowIds.add(windowId);
-      }
-
-      // Auto-promote idle in-progress cards to review,
-      // and demote active review cards back to in-progress
-      const changeTimes: Record<string, number> = {};
-      for (const [windowId, entry] of nextActivity) {
-        changeTimes[windowId] = entry.lastChangeTime;
-      }
-      let cfg = configRef.current;
-      const idlePromotions = getIdlePromotions(cfg.cards, changeTimes, Date.now(), IDLE_PROMOTE_MS);
-      const reviewDemotions = getReviewDemotions(cfg.cards, changedWindowIds);
-      if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
-        const newCards = { ...cfg.cards };
-        for (const cardId of idlePromotions) {
-          newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
-        }
-        for (const cardId of reviewDemotions) {
-          newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
-        }
-        const newConfig: BoardConfig = { ...cfg, cards: newCards };
-        setConfig(newConfig);
-        configRef.current = newConfig;
-        saveState(newConfig);
-      }
     };
 
     const interval = setInterval(poll, 3000);

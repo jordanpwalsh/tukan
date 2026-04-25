@@ -9,6 +9,8 @@ import {
   markCardStarted,
   markCardStopped,
   resolveCardInConfig,
+  moveCardToColumn,
+  nextColumnId,
   editCardInConfig,
   columnIdFromName,
   columnNameFromId,
@@ -200,6 +202,37 @@ describe("resolveCardInConfig", () => {
   });
 });
 
+describe("moveCardToColumn", () => {
+  it("updates the card column", () => {
+    const config = configWith([
+      makeCard({ id: "c1", columnId: COL_TODO }),
+    ]);
+    const updated = moveCardToColumn(config, "c1", COL_IN_PROGRESS);
+    expect(updated.cards["c1"].columnId).toBe(COL_IN_PROGRESS);
+  });
+
+  it("returns same config when card is missing or already in target column", () => {
+    const config = configWith([
+      makeCard({ id: "c1", columnId: COL_TODO }),
+    ]);
+    expect(moveCardToColumn(config, "missing", COL_IN_PROGRESS)).toBe(config);
+    expect(moveCardToColumn(config, "c1", COL_TODO)).toBe(config);
+  });
+});
+
+describe("nextColumnId", () => {
+  it("returns the next column based on config order", () => {
+    const config = defaultConfig();
+    expect(nextColumnId(config, COL_TODO)).toBe(COL_IN_PROGRESS);
+  });
+
+  it("returns null for the last or an unknown column", () => {
+    const config = defaultConfig();
+    expect(nextColumnId(config, COL_DONE)).toBeNull();
+    expect(nextColumnId(config, "missing")).toBeNull();
+  });
+});
+
 describe("editCardInConfig", () => {
   it("updates specified fields only", () => {
     const config = configWith([
@@ -226,11 +259,36 @@ describe("columnIdFromName", () => {
     expect(columnIdFromName("Todo")).toBe(COL_TODO);
     expect(columnIdFromName("in progress")).toBe(COL_IN_PROGRESS);
     expect(columnIdFromName("in-progress")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("inProgress")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("In Progress")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("in_progress")).toBe(COL_IN_PROGRESS);
     expect(columnIdFromName("done")).toBe(COL_DONE);
+  });
+
+  it("accepts formatting variants for every built-in lane", () => {
+    expect(columnIdFromName("unassigned")).toBe("0");
+    expect(columnIdFromName("Unassigned")).toBe("0");
+    expect(columnIdFromName("todo")).toBe("1");
+    expect(columnIdFromName("Todo")).toBe("1");
+    expect(columnIdFromName("in progress")).toBe("2");
+    expect(columnIdFromName("in-progress")).toBe("2");
+    expect(columnIdFromName("inProgress")).toBe("2");
+    expect(columnIdFromName("review")).toBe("3");
+    expect(columnIdFromName("Review")).toBe("3");
+    expect(columnIdFromName("done")).toBe("4");
+    expect(columnIdFromName("Done")).toBe("4");
+  });
+
+  it("normalizes whitespace, underscores, and surrounding spaces", () => {
+    expect(columnIdFromName("  in progress  ")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("in_progress")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("In_Progress")).toBe(COL_IN_PROGRESS);
+    expect(columnIdFromName("  unassigned  ")).toBe("0");
   });
 
   it("returns null for unknown names", () => {
     expect(columnIdFromName("unknown")).toBeNull();
+    expect(columnIdFromName("progress in")).toBeNull();
   });
 });
 

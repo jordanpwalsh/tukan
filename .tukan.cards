@@ -619,7 +619,7 @@
     },
     "783576c4-fa64-4f3c-bfee-f36cb79c46cf": {
       "id": "783576c4-fa64-4f3c-bfee-f36cb79c46cf",
-      "columnId": "1",
+      "columnId": "4",
       "name": "Session Level Hooks",
       "description": "Session level hooks - before and after type things, like commit and push and build.",
       "acceptanceCriteria": "",
@@ -627,7 +627,8 @@
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "claude",
       "worktree": false,
-      "createdAt": 1771480948822
+      "createdAt": 1771480948822,
+      "closedAt": 1777090943837
     },
     "481f9cd6-a407-4ce8-9498-79700fa91f14": {
       "id": "481f9cd6-a407-4ce8-9498-79700fa91f14",
@@ -727,7 +728,7 @@
     },
     "9812abc8-159f-4509-80e2-5d72044ba98f": {
       "id": "9812abc8-159f-4509-80e2-5d72044ba98f",
-      "columnId": "2",
+      "columnId": "4",
       "name": "Shell test",
       "description": "shell test",
       "acceptanceCriteria": "",
@@ -736,8 +737,8 @@
       "command": "shell",
       "worktree": false,
       "createdAt": 1774800111343,
-      "startedAt": 1774800113499,
-      "closedAt": 1775437363543
+      "startedAt": 1777091045639,
+      "closedAt": 1777091052215
     },
     "f6a49ce4-bee3-464c-8cb2-b7f486a6f4ca": {
       "id": "f6a49ce4-bee3-464c-8cb2-b7f486a6f4ca",
@@ -764,6 +765,46 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1776971621522
+    },
+    "d08ddee1-11ae-42cb-a18c-1ea8155d2e47": {
+      "id": "d08ddee1-11ae-42cb-a18c-1ea8155d2e47",
+      "columnId": "2",
+      "name": "tukan move",
+      "description": "repurpose tukan move to move cards between lanes. find a new name for current behavior of tukan move. \n",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1777090332871,
+      "startedAt": 1777092175517,
+      "windowId": "@2"
+    },
+    "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5": {
+      "id": "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5",
+      "columnId": "1",
+      "name": "remember last card settings",
+      "description": "remember the settigns for new cards (working directory, worktree, command)",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1777090368676
+    },
+    "b5071aa0-6710-430c-9dfb-a36052fbcc7d": {
+      "id": "b5071aa0-6710-430c-9dfb-a36052fbcc7d",
+      "columnId": "4",
+      "name": "remove auto promotion to review",
+      "description": "remove auto promotion to review - when a card is idle for a period of time it automatically moes the card to in review. Revmoe that, but stil continue to show the idle time on the cards. ",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1777090444484,
+      "windowId": "@0",
+      "startedAt": 1777091063432
     }
   },
   "commands": [

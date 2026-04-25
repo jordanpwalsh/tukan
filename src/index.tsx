@@ -23,7 +23,7 @@ export function detectServerName(): string | undefined {
   return undefined;
 }
 
-const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "move", "list", "show", "sessions", "refresh", "send", "peek", "register", "migrate", "help"]);
+const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "move", "transfer", "list", "show", "sessions", "send", "peek", "register", "help"]);
 
 async function launchTui(sessionArg?: string) {
   const insideTmux = !!process.env.TMUX;
@@ -59,9 +59,9 @@ async function launchTui(sessionArg?: string) {
     const activeWindows = existingSession?.activeWindows ?? [];
 
     // Compare current pane hashes with persisted ones to decide which
-    // timestamps to keep. If a pane's content hasn't changed, the card
-    // was truly idle — keep the real timestamp. If it changed (or we have
-    // no prior hash), reset to now so we don't spuriously promote.
+    // timestamps to keep. If a pane's content hasn't changed, the window
+    // was truly idle, so keep the real timestamp for the idle timer.
+    // If it changed (or we have no prior hash), reset to now.
     const savedHashes = existingSession?.paneHashes ?? {};
     const now = Date.now();
     const allPaneIds: string[] = [];

@@ -10,7 +10,7 @@ import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildSendKe
 import { readSessionState, writeSessionState, migrateConfig, readAllSessions, listSessionNames, registerSession } from "./state/store.js";
 import { defaultConfig, DEFAULT_COMMANDS, COL_DONE, COL_IN_PROGRESS, COL_REVIEW } from "./board/types.js";
 import { reconcileConfig } from "./board/derive.js";
-import { getIdlePromotions, getReviewDemotionsByTime, IDLE_PROMOTE_MS, hashContent } from "./board/activity.js";
+import { hashContent } from "./board/activity.js";
 import { detectServerName } from "./index.js";
 import {
   createCard,
@@ -21,9 +21,11 @@ import {
   markCardStarted,
   markCardStopped,
   resolveCardInConfig,
+  moveCardToColumn,
   editCardInConfig,
   columnIdFromName,
   columnNameFromId,
+  nextColumnId,
 } from "./board/card-ops.js";
 import { buildCardTemplate, parseCardTemplate } from "./board/card-template.js";
 import type { BoardConfig, Card } from "./board/types.js";
@@ -527,7 +529,41 @@ export function createProgram(): Command {
 
   program
     .command("move")
-    .description("Move a card to another session")
+    .description("Move a card to another lane")
+    .argument("<card>", "Card name or ID prefix")
+    .option("--lane <name>", "Destination lane name")
+    .option("-s, --session <name>", "Session name")
+    .action(async (query: string, opts: { lane?: string; session?: string }) => {
+      const resolved = await loadContextForCard(query, opts.session);
+      if (!resolved) return;
+      const { ctx, id, card } = resolved;
+
+      const columnId = opts.lane ? columnIdFromName(opts.lane) : nextColumnId(ctx.config, card.columnId);
+      if (!columnId) {
+        if (opts.lane) {
+          console.error(`Unknown lane "${opts.lane}". Use one of: Unassigned, Todo, In Progress, Review, Done.`);
+        } else {
+          console.error(`Card "${card.name}" is already in the last lane.`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      if (card.columnId === columnId) {
+        console.error(`Card is already in ${columnNameFromId(columnId)}.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const newConfig = moveCardToColumn(ctx.config, id, columnId);
+      await saveConfig(ctx, newConfig);
+
+      console.log(`Moved "${card.name}" → ${columnNameFromId(columnId)}`);
+    });
+
+  program
+    .command("transfer")
+    .description("Transfer a card to another session")
     .argument("<card>", "Card name or ID prefix")
     .argument("<target-session>", "Destination session name")
     .option("-s, --session <name>", "Source session name")
@@ -565,7 +601,7 @@ export function createProgram(): Command {
       await saveConfig(srcCtx, newSrcConfig);
       writeSessionState(targetSession, { ...targetState, board: newTargetConfig });
 
-      console.log(`Moved "${card.name}" → ${targetSession}`);
+      console.log(`Transferred "${card.name}" → ${targetSession}`);
     });
 
   program
@@ -809,64 +845,6 @@ export function createProgram(): Command {
     });
 
   program
-    .command("refresh")
-    .description("Update board state (reconcile windows, promote idle cards) and exit")
-    .option("-s, --session <name>", "Session name")
-    .action(async (opts: { session?: string }) => {
-      // Determine which sessions to refresh
-      const sessionNames = opts.session
-        ? [opts.session]
-        : await listSessionNames();
-
-      if (sessionNames.length === 0) {
-        // Fall back to auto-detected session
-        sessionNames.push(undefined as unknown as string);
-      }
-
-      const multi = sessionNames.length > 1;
-      let anyChanges = false;
-
-      for (const sName of sessionNames) {
-        const ctx = await loadContext(sName);
-        const existingSession = await readSessionState(ctx.sessionName);
-        const lastChangeTimes = existingSession?.lastChangeTimes ?? {};
-        const prefix = multi ? `[${ctx.sessionName}] ` : "";
-
-        const now = Date.now();
-
-        const idlePromotions = getIdlePromotions(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
-        const reviewDemotions = getReviewDemotionsByTime(ctx.config.cards, lastChangeTimes, now, IDLE_PROMOTE_MS);
-
-        if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
-          const newCards = { ...ctx.config.cards };
-          for (const cardId of idlePromotions) {
-            newCards[cardId] = { ...newCards[cardId], columnId: COL_REVIEW };
-          }
-          for (const cardId of reviewDemotions) {
-            newCards[cardId] = { ...newCards[cardId], columnId: COL_IN_PROGRESS };
-          }
-          ctx.config = { ...ctx.config, cards: newCards };
-        }
-
-        await saveConfig(ctx, ctx.config);
-
-        if (idlePromotions.length > 0 || reviewDemotions.length > 0) {
-          anyChanges = true;
-          for (const cardId of idlePromotions) {
-            console.log(`${prefix}Promoted "${ctx.config.cards[cardId].name}" → Review (idle)`);
-          }
-          for (const cardId of reviewDemotions) {
-            console.log(`${prefix}Demoted "${ctx.config.cards[cardId].name}" → In Progress (active)`);
-          }
-        }
-      }
-
-      if (!anyChanges) {
-        console.log("Board is up to date.");
-      }
-    });
-
-  program
     .command("sessions")
     .description("List tukan sessions (tmux + state files)")
     .action(async () => {
@@ -931,40 +909,6 @@ export function createProgram(): Command {
       const sessionName = opts?.session ?? basename(projectDir);
       registerSession(sessionName, projectDir);
       console.log(`Registered "${sessionName}" → ${projectDir}`);
-    });
-
-  program
-    .command("migrate")
-    .description("Migrate all sessions from centralized to project-local storage")
-    .option("--dry-run", "Show what would be migrated without making changes")
-    .action(async (opts: { dryRun?: boolean }) => {
-      const names = await listSessionNames();
-      let count = 0;
-
-      for (const name of names) {
-        const state = await readSessionState(name);
-        if (!state) continue;
-
-        const dir = state.workingDir;
-        const cardsPath = join(dir, ".tukan.cards");
-
-        if (opts.dryRun) {
-          console.log(`Would migrate "${name}" → ${cardsPath}`);
-          count++;
-          continue;
-        }
-
-        // writeSessionState handles the split: .tukan.cards + ephemeral + registry
-        writeSessionState(name, state);
-        count++;
-        console.log(`Migrated "${name}" → ${cardsPath}`);
-      }
-
-      if (count === 0) {
-        console.log("No sessions to migrate.");
-      } else {
-        console.log(`\n${opts.dryRun ? "Would migrate" : "Migrated"} ${count} session(s).`);
-      }
     });
 
   return program;

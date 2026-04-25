@@ -85,18 +85,27 @@ tukan start <card>              # start a card (creates tmux window)
 tukan stop <card>               # stop a card (kill window, mark closed)
 tukan resolve <card>            # move card to Done
 tukan edit <card>               # edit a card ($EDITOR or flags)
-tukan move <card> <session>     # move a card to another session
+tukan move <card> [--lane <lane>] # move a card to another lane, or next lane by default
+tukan transfer <card> <session> # move a card to another session
 tukan show <card>               # show card details (--json for structured output)
 tukan peek <card>               # show a card's current pane content
 tukan send <card> <text>        # send keystrokes to a card's pane
 tukan list                      # list cards (--column, --all, --json)
 tukan sessions                  # list tukan sessions
-tukan refresh                   # sync activity state
 tukan register [path]           # register a project directory (-s for session name)
-tukan migrate                   # migrate centralized → project-local storage (--dry-run)
 ```
 
 Most commands accept `-s <session>` to target a specific session.
+
+`<card>` can be a card name, full card ID, or unique ID prefix. For example:
+
+```sh
+tukan move "Fix login bug"                 # moves to the next lane
+tukan move 2f8c9c2e-1d7b-4b3a-9a1d-123456789abc --lane in-progress
+tukan move 2f8c --lane inProgress
+```
+
+Lane names accept spaced, dashed, underscored, and camelCase forms.
 
 ### Keybindings
 

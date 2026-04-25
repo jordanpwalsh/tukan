@@ -37,6 +37,7 @@ If a card's `--command` isn't set to `claude`, edit it before starting: `tukan e
 
 - **Card**: A coding task with a name, description, acceptance criteria, working directory, and lifecycle state.
 - **Columns**: Todo → In Progress → Review → Done. Cards flow left to right as work progresses.
+- **Move semantics**: `tukan move <card>` advances a card to the next lane in the configured board order. Use `tukan move <card> --lane <name>` to jump to a specific lane.
 - **Lifecycle**: Cards start in Todo. `start` creates a tmux window pointed at the task's project directory and moves the card to In Progress. `resolve` moves it to Done and optionally merges the git branch.
 - **Session**: Cards are scoped to a tmux session (auto-detected or passed with `-s`). Different sessions can track different project boards.
 - **Worktree**: Cards can optionally create a git worktree + branch, giving each task an isolated checkout for parallel work on the same repo.
@@ -137,6 +138,15 @@ tukan edit a1b2c3d4 --ac "All tests green" --dir /new/path
 ```
 
 Options: `--name`, `-d/--description`, `--ac`, `--dir`, `--command`.
+
+### Move a card
+
+```bash
+tukan move a1b2c3d4                # advance to the next lane
+tukan move a1b2c3d4 --lane review  # move to a specific lane
+```
+
+Use this when you need to promote a card without starting or resolving it, or when you need to place it in a non-default lane explicitly.
 
 ### Peek at a card's screen
 

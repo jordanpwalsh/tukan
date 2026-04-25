@@ -172,6 +172,26 @@ export function resolveCardInConfig(config: BoardConfig, cardId: string): BoardC
   };
 }
 
+/** Move a card to a specific column. */
+export function moveCardToColumn(config: BoardConfig, cardId: string, columnId: string): BoardConfig {
+  const card = config.cards[cardId];
+  if (!card || card.columnId === columnId) return config;
+  return {
+    ...config,
+    cards: {
+      ...config.cards,
+      [cardId]: { ...card, columnId },
+    },
+  };
+}
+
+/** Get the next column ID after the given column in config order. */
+export function nextColumnId(config: BoardConfig, columnId: string): string | null {
+  const currentIndex = config.columns.findIndex((column) => column.id === columnId);
+  if (currentIndex < 0) return null;
+  return config.columns[currentIndex + 1]?.id ?? null;
+}
+
 export interface EditCardFields {
   name?: string;
   description?: string;
@@ -212,16 +232,22 @@ export function editCardInConfig(config: BoardConfig, cardId: string, fields: Ed
 const COLUMN_NAME_MAP: Record<string, string> = {
   unassigned: COL_UNASSIGNED,
   todo: COL_TODO,
-  "in progress": COL_IN_PROGRESS,
-  "in-progress": COL_IN_PROGRESS,
   inprogress: COL_IN_PROGRESS,
   review: COL_REVIEW,
   done: COL_DONE,
 };
 
+function normalizeColumnName(name: string): string {
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[\s_-]+/g, "")
+    .toLowerCase();
+}
+
 /** Resolve a column name (case-insensitive) to its ID. */
 export function columnIdFromName(name: string): string | null {
-  return COLUMN_NAME_MAP[name.toLowerCase()] ?? null;
+  return COLUMN_NAME_MAP[normalizeColumnName(name)] ?? null;
 }
 
 const COLUMN_ID_MAP: Record<string, string> = {

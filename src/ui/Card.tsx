@@ -112,8 +112,8 @@ export function Card({ card, commands, selected, width }: CardProps) {
   const command = resolveCommandLabel(card.command || "shell", commands);
   const dir = card.workingDir ? shortenPath(card.workingDir) : "";
 
-  // Show idle time for started cards that aren't spinning or active
-  const showIdle = card.started && !card.spinning && !card.active && card.idleTime != null;
+  // Show idle time for started cards whenever they are not actively changing.
+  const showIdle = card.started && !card.spinning && card.idleTime != null;
 
   const selColor = card.started ? "cyan" : "yellow";
 
