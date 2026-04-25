@@ -752,6 +752,18 @@
       "createdAt": 1775437431264,
       "startedAt": 1775437522770,
       "closedAt": 1775437538802
+    },
+    "ef91a468-2c44-4b93-ba72-b9f83af5ab5c": {
+      "id": "ef91a468-2c44-4b93-ba72-b9f83af5ab5c",
+      "columnId": "1",
+      "name": "Pasting error",
+      "description": "When pasting into a the description field, it incorrectly wraps and doesnt pastthe whole thing\n",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1776971621522
     }
   },
   "commands": [
