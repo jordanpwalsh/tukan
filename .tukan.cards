@@ -768,7 +768,7 @@
     },
     "d08ddee1-11ae-42cb-a18c-1ea8155d2e47": {
       "id": "d08ddee1-11ae-42cb-a18c-1ea8155d2e47",
-      "columnId": "2",
+      "columnId": "4",
       "name": "tukan move",
       "description": "repurpose tukan move to move cards between lanes. find a new name for current behavior of tukan move. \n",
       "acceptanceCriteria": "",
@@ -778,7 +778,7 @@
       "worktree": false,
       "createdAt": 1777090332871,
       "startedAt": 1777092175517,
-      "windowId": "@2"
+      "closedAt": 1777095684320
     },
     "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5": {
       "id": "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5",
