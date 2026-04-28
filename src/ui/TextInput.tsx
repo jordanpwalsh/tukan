@@ -28,11 +28,13 @@ export function TextInput({ value, onChange, placeholder, focus, multiline, minH
         !key.downArrow &&
         !key.leftArrow &&
         !key.rightArrow &&
-        input &&
-        // Filter out control characters (e.g. DEL \x7f)
-        input >= " "
+        input
       ) {
-        onChange(value + input);
+        // For pasted multi-character input, filter out control characters
+        const sanitized = input.split("").filter((ch) => ch >= " " || ch === "\n").join("");
+        if (sanitized) {
+          onChange(value + sanitized);
+        }
       }
     },
     { isActive: focus },
@@ -43,12 +45,27 @@ export function TextInput({ value, onChange, placeholder, focus, multiline, minH
     const showPlaceholder = !value && !focus && placeholder;
     const wrapWidth = width ?? 80;
 
-    // Soft-wrap a single logical line into visual lines at wrapWidth
+    // Soft-wrap a single logical line into visual lines at wrapWidth, breaking at word boundaries
     const wrapLine = (line: string, w: number): string[] => {
       if (line.length <= w) return [line];
       const wrapped: string[] = [];
-      for (let pos = 0; pos < line.length; pos += w) {
-        wrapped.push(line.slice(pos, pos + w));
+      let pos = 0;
+      while (pos < line.length) {
+        if (pos + w >= line.length) {
+          wrapped.push(line.slice(pos));
+          break;
+        }
+        // Look for the last space within the window to avoid breaking words
+        const chunk = line.slice(pos, pos + w);
+        const lastSpace = chunk.lastIndexOf(" ");
+        if (lastSpace > 0) {
+          wrapped.push(line.slice(pos, pos + lastSpace));
+          pos += lastSpace + 1; // skip the space
+        } else {
+          // No space found, break mid-word
+          wrapped.push(chunk);
+          pos += w;
+        }
       }
       return wrapped;
     };
