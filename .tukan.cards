@@ -756,7 +756,7 @@
     },
     "ef91a468-2c44-4b93-ba72-b9f83af5ab5c": {
       "id": "ef91a468-2c44-4b93-ba72-b9f83af5ab5c",
-      "columnId": "1",
+      "columnId": "2",
       "name": "Pasting error",
       "description": "When pasting into a the description field, it incorrectly wraps and doesnt pastthe whole thing\n",
       "acceptanceCriteria": "",
@@ -764,7 +764,9 @@
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "cmd-e35a7bf0",
       "worktree": false,
-      "createdAt": 1776971621522
+      "createdAt": 1776971621522,
+      "windowId": "@8",
+      "startedAt": 1777413509522
     },
     "d08ddee1-11ae-42cb-a18c-1ea8155d2e47": {
       "id": "d08ddee1-11ae-42cb-a18c-1ea8155d2e47",
@@ -791,8 +793,8 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777090368676,
-      "windowId": "@1",
-      "startedAt": 1777129996035
+      "startedAt": 1777129996035,
+      "closedAt": 1777412567452
     },
     "b5071aa0-6710-430c-9dfb-a36052fbcc7d": {
       "id": "b5071aa0-6710-430c-9dfb-a36052fbcc7d",
