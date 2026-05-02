@@ -285,7 +285,15 @@ export function createProgram(): Command {
       }
 
       const connect = resolveSessionConnectArgs(ctx.sessionName, tmux, process.env);
-      await execTmuxCommand(connect.args);
+      const result = spawnSync("tmux", connect.args, { stdio: "inherit" });
+      if (result.error) {
+        console.error(result.error.message);
+        process.exitCode = 1;
+        return;
+      }
+      if (result.status !== 0) {
+        process.exitCode = result.status ?? 1;
+      }
     });
 
   program

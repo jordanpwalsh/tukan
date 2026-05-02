@@ -765,8 +765,8 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1776971621522,
-      "windowId": "@8",
-      "startedAt": 1777413509522
+      "startedAt": 1777413509522,
+      "closedAt": 1777698830001
     },
     "d08ddee1-11ae-42cb-a18c-1ea8155d2e47": {
       "id": "d08ddee1-11ae-42cb-a18c-1ea8155d2e47",
@@ -815,14 +815,14 @@
       "name": "zsh",
       "description": "",
       "acceptanceCriteria": "",
-      "columnId": "0",
+      "columnId": "2",
       "sessionName": "tukan",
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "shell",
       "worktree": false,
-      "windowId": "@0",
       "createdAt": 1777093389099,
-      "startedAt": 1777129986117
+      "startedAt": 1777698833072,
+      "closedAt": 1777698893671
     },
     "fffd92e0-c36a-4800-99a8-ede02b616eab": {
       "id": "fffd92e0-c36a-4800-99a8-ede02b616eab",
@@ -835,6 +835,20 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777095656624
+    },
+    "d24cfa6f-f25f-495f-92ad-d575b244721a": {
+      "id": "d24cfa6f-f25f-495f-92ad-d575b244721a",
+      "columnId": "3",
+      "name": "tukan tmux command",
+      "description": "add a tukan tmux command to connect to the session using the usual rules, which I think are -s for session or auto detect based on current location.",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1777698944926,
+      "windowId": "@4",
+      "startedAt": 1777698946672
     }
   },
   "commands": [
