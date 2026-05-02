@@ -23,7 +23,7 @@ export function detectServerName(): string | undefined {
   return undefined;
 }
 
-const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "move", "transfer", "list", "show", "sessions", "send", "peek", "register", "help"]);
+const KNOWN_SUBCOMMANDS = new Set(["add", "start", "stop", "resolve", "edit", "move", "transfer", "list", "show", "sessions", "send", "peek", "tmux", "register", "help"]);
 
 async function launchTui(sessionArg?: string) {
   const insideTmux = !!process.env.TMUX;

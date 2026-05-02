@@ -90,6 +90,7 @@ tukan transfer <card> <session> # move a card to another session
 tukan show <card>               # show card details (--json for structured output)
 tukan peek <card>               # show a card's current pane content
 tukan send <card> <text>        # send keystrokes to a card's pane
+tukan tmux                      # connect to the tmux session for this project
 tukan list                      # list cards (--column, --all, --json)
 tukan sessions                  # list tukan sessions
 tukan register [path]           # register a project directory (-s for session name)

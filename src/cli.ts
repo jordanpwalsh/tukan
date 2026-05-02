@@ -28,6 +28,7 @@ import {
   nextColumnId,
 } from "./board/card-ops.js";
 import { buildCardTemplate, parseCardTemplate } from "./board/card-template.js";
+import { resolveSessionConnectArgs } from "./tmux/switch.js";
 import type { BoardConfig, Card } from "./board/types.js";
 import type { SessionState } from "./state/types.js";
 import { buildResolveSteps, runResolveWorkflow, type ResolveStep } from "./worktree/resolve.js";
@@ -267,6 +268,25 @@ export function createProgram(): Command {
     .name("tukan")
     .description("Kanban board for tmux windows")
     .version("0.0.1");
+
+  program
+    .command("tmux")
+    .description("Connect to the tmux session for this project")
+    .option("-s, --session <name>", "Session name")
+    .action(async (opts: { session?: string }) => {
+      const ctx = await loadContext(opts.session);
+      const tmux = await getTmuxState(ctx.serverName);
+      const sessionExists = tmux.sessions.some((session) => session.name === ctx.sessionName);
+
+      if (!sessionExists) {
+        console.error(`tmux session "${ctx.sessionName}" not found.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const connect = resolveSessionConnectArgs(ctx.sessionName, tmux, process.env);
+      await execTmuxCommand(connect.args);
+    });
 
   program
     .command("add")

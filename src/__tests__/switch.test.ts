@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSwitchArgs } from "../tmux/switch.js";
+import { resolveSessionConnectArgs, resolveSwitchArgs } from "../tmux/switch.js";
 import type { TmuxServer } from "../tmux/types.js";
 
 const server: TmuxServer = {
@@ -63,6 +63,28 @@ describe("resolveSwitchArgs", () => {
     expect(result).toEqual({
       mode: "attach",
       args: ["attach-session", "-t", "main:@1"],
+    });
+  });
+});
+
+describe("resolveSessionConnectArgs", () => {
+  it("switches client when inside tmux on the same server", () => {
+    const result = resolveSessionConnectArgs("main", server, {
+      TMUX: "/tmp/tmux-1000/myserver,12345,0",
+    });
+
+    expect(result).toEqual({
+      mode: "switch",
+      args: ["-L", "myserver", "switch-client", "-t", "main"],
+    });
+  });
+
+  it("attaches when outside tmux", () => {
+    const result = resolveSessionConnectArgs("main", server, {});
+
+    expect(result).toEqual({
+      mode: "attach",
+      args: ["-L", "myserver", "attach-session", "-t", "main"],
     });
   });
 });
