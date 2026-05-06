@@ -838,7 +838,7 @@
     },
     "d24cfa6f-f25f-495f-92ad-d575b244721a": {
       "id": "d24cfa6f-f25f-495f-92ad-d575b244721a",
-      "columnId": "3",
+      "columnId": "2",
       "name": "tukan tmux command",
       "description": "add a tukan tmux command to connect to the session using the usual rules, which I think are -s for session or auto detect based on current location.",
       "acceptanceCriteria": "",
@@ -847,8 +847,8 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777698944926,
-      "windowId": "@4",
-      "startedAt": 1777698946672
+      "windowId": "@45",
+      "startedAt": 1778091298261
     }
   },
   "commands": [

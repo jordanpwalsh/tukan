@@ -1,6 +1,6 @@
 {
   "name": "tukan",
-  "version": "26.5.2",
+  "version": "26.5.4",
   "description": "",
   "main": "dist/index.js",
   "bin": {

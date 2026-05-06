@@ -273,19 +273,27 @@ export function createProgram(): Command {
     .command("tmux")
     .description("Connect to the tmux session for this project")
     .option("-s, --session <name>", "Session name")
-    .action(async (opts: { session?: string }) => {
+    .option("--CC", "Launch tmux in control mode")
+    .action(async (opts: { session?: string; CC?: boolean }) => {
       const ctx = await loadContext(opts.session);
       const tmux = await getTmuxState(ctx.serverName);
       const sessionExists = tmux.sessions.some((session) => session.name === ctx.sessionName);
 
-      if (!sessionExists) {
-        console.error(`tmux session "${ctx.sessionName}" not found.`);
-        process.exitCode = 1;
-        return;
+      let args: string[];
+      if (sessionExists) {
+        const connect = resolveSessionConnectArgs(ctx.sessionName, tmux, process.env);
+        args = connect.args;
+      } else {
+        // Create new session
+        const serverArgs = ctx.serverName ? ["-L", ctx.serverName] : [];
+        args = [...serverArgs, "new-session", "-s", ctx.sessionName, "-c", ctx.workingDir];
       }
 
-      const connect = resolveSessionConnectArgs(ctx.sessionName, tmux, process.env);
-      const result = spawnSync("tmux", connect.args, { stdio: "inherit" });
+      if (opts.CC) {
+        args = ["-CC", ...args];
+      }
+
+      const result = spawnSync("tmux", args, { stdio: "inherit" });
       if (result.error) {
         console.error(result.error.message);
         process.exitCode = 1;
@@ -371,7 +379,8 @@ export function createProgram(): Command {
         acceptanceCriteria: card.acceptanceCriteria,
       };
 
-      const tmux = await getTmuxState(ctx.serverName, ctx.sessionName);
+      // Fetch unfiltered tmux state to check if target session exists
+      const tmux = await getTmuxState(ctx.serverName);
       const args = shouldCreateNewSession(tmux, windowOpts.sessionName)
         ? buildNewSessionArgs(windowOpts, ctx.serverName ?? "")
         : buildNewWindowArgs(windowOpts, ctx.serverName ?? "");

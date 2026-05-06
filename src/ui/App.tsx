@@ -544,8 +544,10 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         acceptanceCriteria: card.acceptanceCriteria,
       };
 
-      // Create a session when the card's target session does not exist yet.
-      const args = shouldCreateNewSession(tmux, windowOpts.sessionName)
+      // Fetch fresh, unfiltered tmux state to check if target session exists.
+      // The component's tmux state may be filtered or stale.
+      const freshTmux = await getTmuxState(serverName);
+      const args = shouldCreateNewSession(freshTmux, windowOpts.sessionName)
         ? buildNewSessionArgs(windowOpts, serverName ?? "")
         : buildNewWindowArgs(windowOpts, serverName ?? "");
 
