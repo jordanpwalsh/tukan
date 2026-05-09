@@ -847,8 +847,20 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777698944926,
-      "windowId": "@45",
-      "startedAt": 1778091298261
+      "startedAt": 1778091298261,
+      "closedAt": 1778355394291
+    },
+    "1e66d665-b56d-4f2f-a281-c21f1ec34903": {
+      "id": "1e66d665-b56d-4f2f-a281-c21f1ec34903",
+      "columnId": "1",
+      "name": "track agent conversation",
+      "description": "Each card should track the corresponding agent conversation so it can be resume with preserved context. ",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1778355434018
     }
   },
   "commands": [
