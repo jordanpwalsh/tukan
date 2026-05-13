@@ -40,6 +40,7 @@ describe("buildNewWindowArgs", () => {
         commandTemplate: "claude",
         description: "Fix the login bug",
         acceptanceCriteria: "Users can log in successfully",
+        agentLaunchPlan: { cli: "claude", sessionId: "session-1", resume: false },
       },
       serverName,
     );
@@ -48,7 +49,7 @@ describe("buildNewWindowArgs", () => {
       "-e", "TUKAN_CARD_NAME=my-task",
       "-e", "TUKAN_CARD_DESCRIPTION=Fix the login bug",
       "-e", "TUKAN_CARD_AC=Users can log in successfully",
-      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--",
+      "sh", "-c", 'claude --session-id session-1 "$@"; exec "${SHELL:-sh}"', "--",
       "Fix the login bug\n\nAcceptance criteria: Users can log in successfully",
     ]);
   });
@@ -63,15 +64,24 @@ describe("buildNewWindowArgs", () => {
 
   it("claude template with no description or criteria wraps bare claude", () => {
     const args = buildNewWindowArgs(
-      { ...baseOpts, commandTemplate: "claude" },
+      {
+        ...baseOpts,
+        commandTemplate: "claude",
+        agentLaunchPlan: { cli: "claude", sessionId: "session-1", resume: false },
+      },
       serverName,
     );
-    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--"]);
+    expect(args).toEqual([...baseArgs, ...envArgs, "sh", "-c", 'claude --session-id session-1 "$@"; exec "${SHELL:-sh}"', "--"]);
   });
 
   it("claude template with only description omits criteria", () => {
     const args = buildNewWindowArgs(
-      { ...baseOpts, commandTemplate: "claude", description: "Do something" },
+      {
+        ...baseOpts,
+        commandTemplate: "claude",
+        description: "Do something",
+        agentLaunchPlan: { cli: "claude", sessionId: "session-1", resume: false },
+      },
       serverName,
     );
     expect(args).toEqual([
@@ -79,8 +89,24 @@ describe("buildNewWindowArgs", () => {
       "-e", "TUKAN_CARD_NAME=my-task",
       "-e", "TUKAN_CARD_DESCRIPTION=Do something",
       "-e", "TUKAN_CARD_AC=",
-      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--",
+      "sh", "-c", 'claude --session-id session-1 "$@"; exec "${SHELL:-sh}"', "--",
       "Do something",
+    ]);
+  });
+
+  it("resumes claude sessions when a persisted session id exists", () => {
+    const args = buildNewWindowArgs(
+      {
+        ...baseOpts,
+        commandTemplate: "claude --model sonnet",
+        agentLaunchPlan: { cli: "claude", sessionId: "session-1", resume: true },
+      },
+      serverName,
+    );
+    expect(args).toEqual([
+      ...baseArgs,
+      ...envArgs,
+      "sh", "-c", 'claude --resume session-1 --model sonnet "$@"; exec "${SHELL:-sh}"', "--",
     ]);
   });
 
@@ -127,11 +153,32 @@ describe("buildNewSessionArgs", () => {
 
   it("appends wrapped command for claude template", () => {
     const args = buildNewSessionArgs(
-      { ...baseOpts, commandTemplate: "claude", description: "Fix bug" },
+      {
+        ...baseOpts,
+        commandTemplate: "claude",
+        description: "Fix bug",
+        agentLaunchPlan: { cli: "claude", sessionId: "session-1", resume: false },
+      },
       serverName,
     );
     expect(args.slice(-5)).toEqual([
-      "sh", "-c", 'claude "$@"; exec "${SHELL:-sh}"', "--", "Fix bug",
+      "sh", "-c", 'claude --session-id session-1 "$@"; exec "${SHELL:-sh}"', "--", "Fix bug",
+    ]);
+  });
+
+  it("wraps codex resume when a persisted codex session exists", () => {
+    const args = buildNewWindowArgs(
+      {
+        ...baseOpts,
+        commandTemplate: "codex --search",
+        agentLaunchPlan: { cli: "codex", sessionId: "session-2", resume: true },
+      },
+      serverName,
+    );
+    expect(args).toEqual([
+      ...baseArgs,
+      ...envArgs,
+      "sh", "-c", 'codex resume --search session-2 "$@"; exec "${SHELL:-sh}"', "--",
     ]);
   });
 });

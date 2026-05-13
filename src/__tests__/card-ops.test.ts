@@ -12,8 +12,10 @@ import {
   moveCardToColumn,
   nextColumnId,
   editCardInConfig,
+  getNewCardDefaults,
   columnIdFromName,
   columnNameFromId,
+  updateNewCardDefaults,
 } from "../board/card-ops.js";
 import { defaultConfig, COL_TODO, COL_IN_PROGRESS, COL_DONE } from "../board/types.js";
 import type { Card, BoardConfig } from "../board/types.js";
@@ -163,6 +165,58 @@ describe("addCardToConfig", () => {
   });
 });
 
+describe("new card defaults", () => {
+  it("resolves defaults from config and falls back to working dir", () => {
+    const config = defaultConfig();
+    config.newCardDefaults = {
+      dir: "/tmp/project",
+      command: "claude",
+      worktree: true,
+    };
+
+    expect(getNewCardDefaults(config, "/fallback")).toEqual({
+      dir: "/tmp/project",
+      command: "claude",
+      worktree: true,
+    });
+  });
+
+  it("falls back to the first configured command when stored command is invalid", () => {
+    const config = defaultConfig();
+    config.commands = [{ id: "opencode", label: "Open Code", template: "opencode" }];
+    config.newCardDefaults = {
+      dir: "/tmp/project",
+      command: "missing",
+      worktree: false,
+    };
+
+    expect(getNewCardDefaults(config, "/fallback")).toEqual({
+      dir: "/tmp/project",
+      command: "opencode",
+      worktree: false,
+    });
+  });
+
+  it("updates persisted new card defaults", () => {
+    const config = defaultConfig();
+    const updated = updateNewCardDefaults(config, {
+      dir: "/tmp/project",
+      command: "claude",
+      worktree: true,
+    });
+
+    expect(updated.newCardDefaults).toEqual({
+      dir: "/tmp/project",
+      command: "claude",
+      worktree: true,
+    });
+    expect(config.newCardDefaults).toEqual({
+      command: "shell",
+      worktree: false,
+    });
+  });
+});
+
 describe("markCardStarted", () => {
   it("sets windowId, startedAt, and moves to in-progress", () => {
     const config = configWith([makeCard({ id: "c1", name: "Task", columnId: COL_TODO })]);
@@ -245,11 +299,21 @@ describe("editCardInConfig", () => {
 
   it("updates command and clears customCommand when not custom", () => {
     const config = configWith([
-      makeCard({ id: "c1", command: "custom", customCommand: "vim ." }),
+      makeCard({ id: "c1", command: "custom", customCommand: "vim .", agentSessionId: "agent-1" }),
     ]);
     const updated = editCardInConfig(config, "c1", { command: "shell" });
     expect(updated.cards["c1"].command).toBe("shell");
     expect(updated.cards["c1"].customCommand).toBeUndefined();
+    expect(updated.cards["c1"].agentSessionId).toBeUndefined();
+  });
+
+  it("preserves agentSessionId when command does not change", () => {
+    const config = configWith([
+      makeCard({ id: "c1", command: "claude", agentSessionId: "agent-1", description: "old desc" }),
+    ]);
+    const updated = editCardInConfig(config, "c1", { description: "new desc" });
+    expect(updated.cards["c1"].description).toBe("new desc");
+    expect(updated.cards["c1"].agentSessionId).toBe("agent-1");
   });
 });
 

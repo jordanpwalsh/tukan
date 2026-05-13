@@ -14,9 +14,11 @@ import { buildNewWindowArgs, buildNewSessionArgs, buildWorktreeArgs, buildSendKe
 import { execTmuxCommand, execTmuxCommandWithOutput, getTmuxState, captureAllPaneContents } from "../tmux/client.js";
 import { computePaneHashes, detectChangedPanes, buildActivityMap } from "../board/activity.js";
 import type { ActivityMap, PaneHashMap } from "../board/activity.js";
+import { getNewCardDefaults, updateNewCardDefaults } from "../board/card-ops.js";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
+import { detectNewCodexSessionId, listCodexSessionIds, planAgentLaunch } from "../agent/conversation.js";
 
 const execFileAsync = promisify(execFile);
 import { randomUUID } from "node:crypto";
@@ -452,9 +454,14 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     (values: FormValues) => {
       const cfg = configRef.current;
       const card = buildCardFromValues(values);
+      const configWithDefaults = updateNewCardDefaults(cfg, {
+        dir: values.dir,
+        command: values.command,
+        worktree: values.worktree,
+      });
       const newConfig: BoardConfig = {
-        ...cfg,
-        cards: { ...cfg.cards, [card.id]: card },
+        ...configWithDefaults,
+        cards: { ...configWithDefaults.cards, [card.id]: card },
       };
       updateConfig(newConfig);
 
@@ -483,6 +490,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         acceptanceCriteria: values.acceptanceCriteria,
         dir: values.dir,
         command: values.command,
+        agentSessionId: values.command === card.command ? card.agentSessionId : undefined,
         worktree: values.worktree,
         worktreePath: values.worktree ? values.worktreePath : undefined,
       };
@@ -534,14 +542,21 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       const commands = configRef.current.commands ?? DEFAULT_COMMANDS;
       const cmdDef = commands.find((c) => c.id === card.command);
       const commandTemplate = cmdDef?.template ?? "";
+      const agentLaunchPlan = planAgentLaunch(card, commandTemplate);
+      const knownCodexSessionIds = agentLaunchPlan.cli === "codex" && !agentLaunchPlan.sessionId
+        ? await listCodexSessionIds()
+        : undefined;
+      const launchStartedAt = Date.now();
 
       const windowOpts = {
         sessionName: card.sessionName,
         name: sanitizeBranchName(card.name),
         dir,
+        commandId: card.command,
         commandTemplate,
         description: card.description,
         acceptanceCriteria: card.acceptanceCriteria,
+        agentLaunchPlan,
       };
 
       // Fetch fresh, unfiltered tmux state to check if target session exists.
@@ -565,6 +580,10 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       const cfg = configRef.current;
       const updatedCard: Card = {
         ...card,
+        agentSessionId: agentLaunchPlan.sessionId
+          ?? (knownCodexSessionIds
+            ? await detectNewCodexSessionId(dir, knownCodexSessionIds, launchStartedAt)
+            : card.agentSessionId),
         windowId: newWindowId,
         startedAt: Date.now(),
         columnId: COL_IN_PROGRESS,
@@ -593,9 +612,14 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
     async (values: FormValues) => {
       const cfg = configRef.current;
       const card = buildCardFromValues(values);
+      const configWithDefaults = updateNewCardDefaults(cfg, {
+        dir: values.dir,
+        command: values.command,
+        worktree: values.worktree,
+      });
       const newConfig: BoardConfig = {
-        ...cfg,
-        cards: { ...cfg.cards, [card.id]: card },
+        ...configWithDefaults,
+        cards: { ...configWithDefaults.cards, [card.id]: card },
       };
       setConfig(newConfig);
       configRef.current = newConfig;
@@ -657,6 +681,7 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
         acceptanceCriteria: values.acceptanceCriteria,
         dir: values.dir,
         command: values.command,
+        agentSessionId: values.command === card.command ? card.agentSessionId : undefined,
         worktree: values.worktree,
         worktreePath: values.worktree ? values.worktreePath : undefined,
       };
@@ -934,17 +959,27 @@ export function App({ initialTmux, initialConfig, initialCursor, initialLastChan
       ? configRef.current.cards[modal.card.cardId]
       : undefined;
 
-    const initialValues = card ? {
-      name: card.name,
-      description: card.description,
-      acceptanceCriteria: card.acceptanceCriteria,
-      dir: card.dir,
-      command: card.command,
-      customCommand: card.customCommand,
-      worktree: card.worktree,
-      worktreePath: card.worktreePath,
-      windowId: card.windowId,
-    } : undefined;
+    const initialValues = (() => {
+      if (card) {
+        return {
+          name: card.name,
+          description: card.description,
+          acceptanceCriteria: card.acceptanceCriteria,
+          dir: card.dir,
+          command: card.command,
+          customCommand: card.customCommand,
+          worktree: card.worktree,
+          worktreePath: card.worktreePath,
+          windowId: card.windowId,
+        };
+      }
+
+      if (modal.mode === "create") {
+        return getNewCardDefaults(configRef.current, workingDir);
+      }
+
+      return undefined;
+    })();
 
     const onSubmit =
       modal.mode === "create" ? handleCreate

@@ -756,7 +756,7 @@
     },
     "ef91a468-2c44-4b93-ba72-b9f83af5ab5c": {
       "id": "ef91a468-2c44-4b93-ba72-b9f83af5ab5c",
-      "columnId": "2",
+      "columnId": "4",
       "name": "Pasting error",
       "description": "When pasting into a the description field, it incorrectly wraps and doesnt pastthe whole thing\n",
       "acceptanceCriteria": "",
@@ -766,7 +766,7 @@
       "worktree": false,
       "createdAt": 1776971621522,
       "startedAt": 1777413509522,
-      "closedAt": 1777698830001
+      "closedAt": 1778356203065
     },
     "d08ddee1-11ae-42cb-a18c-1ea8155d2e47": {
       "id": "d08ddee1-11ae-42cb-a18c-1ea8155d2e47",
@@ -784,7 +784,7 @@
     },
     "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5": {
       "id": "7320ab73-b7fe-4fad-ad4d-d22d21a13fd5",
-      "columnId": "2",
+      "columnId": "4",
       "name": "remember last card settings",
       "description": "remember the settigns for new cards (working directory, worktree, command)",
       "acceptanceCriteria": "",
@@ -793,8 +793,8 @@
       "command": "cmd-e35a7bf0",
       "worktree": false,
       "createdAt": 1777090368676,
-      "startedAt": 1777129996035,
-      "closedAt": 1777412567452
+      "startedAt": 1778355827251,
+      "closedAt": 1778356197607
     },
     "b5071aa0-6710-430c-9dfb-a36052fbcc7d": {
       "id": "b5071aa0-6710-430c-9dfb-a36052fbcc7d",
@@ -815,14 +815,14 @@
       "name": "zsh",
       "description": "",
       "acceptanceCriteria": "",
-      "columnId": "2",
+      "columnId": "4",
       "sessionName": "tukan",
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "shell",
       "worktree": false,
       "createdAt": 1777093389099,
       "startedAt": 1777698833072,
-      "closedAt": 1777698893671
+      "closedAt": 1778355804853
     },
     "fffd92e0-c36a-4800-99a8-ede02b616eab": {
       "id": "fffd92e0-c36a-4800-99a8-ede02b616eab",
@@ -838,7 +838,7 @@
     },
     "d24cfa6f-f25f-495f-92ad-d575b244721a": {
       "id": "d24cfa6f-f25f-495f-92ad-d575b244721a",
-      "columnId": "2",
+      "columnId": "4",
       "name": "tukan tmux command",
       "description": "add a tukan tmux command to connect to the session using the usual rules, which I think are -s for session or auto detect based on current location.",
       "acceptanceCriteria": "",
@@ -848,11 +848,11 @@
       "worktree": false,
       "createdAt": 1777698944926,
       "startedAt": 1778091298261,
-      "closedAt": 1778355394291
+      "closedAt": 1778355799995
     },
     "1e66d665-b56d-4f2f-a281-c21f1ec34903": {
       "id": "1e66d665-b56d-4f2f-a281-c21f1ec34903",
-      "columnId": "1",
+      "columnId": "4",
       "name": "track agent conversation",
       "description": "Each card should track the corresponding agent conversation so it can be resume with preserved context. ",
       "acceptanceCriteria": "",
@@ -860,7 +860,23 @@
       "dir": "/Users/jordan/devel/personal/tukan",
       "command": "cmd-e35a7bf0",
       "worktree": false,
-      "createdAt": 1778355434018
+      "createdAt": 1778355434018,
+      "startedAt": 1778356458557,
+      "closedAt": 1778359552338
+    },
+    "0433d507-e965-45f6-89fb-64abf9b7207b": {
+      "id": "0433d507-e965-45f6-89fb-64abf9b7207b",
+      "columnId": "2",
+      "name": "test card",
+      "description": "just testing a feature",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1778359619840,
+      "startedAt": 1778359719323,
+      "windowId": "@0"
     }
   },
   "commands": [
@@ -884,5 +900,10 @@
       "label": "Codex",
       "template": "codex"
     }
-  ]
+  ],
+  "newCardDefaults": {
+    "dir": "/Users/jordan/devel/personal/tukan",
+    "command": "cmd-e35a7bf0",
+    "worktree": false
+  }
 }

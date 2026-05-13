@@ -154,5 +154,9 @@ describe("migrateConfig", () => {
     expect(config.cards["c1"].name).toBe("Test");
     // Should add Done column
     expect(config.columns.some((c) => c.id === "4")).toBe(true);
+    expect(config.newCardDefaults).toEqual({
+      command: "shell",
+      worktree: false,
+    });
   });
 });

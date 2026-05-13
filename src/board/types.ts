@@ -22,16 +22,24 @@ export interface Card {
   customCommand?: string;        // backward compat for old "custom" commands
   worktree: boolean;
   worktreePath?: string;
+  agentSessionId?: string;       // persisted agent conversation/session ID, when supported
   windowId?: string;             // set when tmux window is linked
   createdAt: number;
   startedAt?: number;
   closedAt?: number;
 }
 
+export interface NewCardDefaults {
+  dir?: string;
+  command?: string;
+  worktree?: boolean;
+}
+
 export interface BoardConfig {
   columns: Array<{ id: string; title: string }>;
   cards: Record<string, Card>;  // cardId → Card
   commands: CommandDef[];
+  newCardDefaults?: NewCardDefaults;
   idleTimeoutMs?: number;       // idle threshold for --wait --json (default 3000)
 }
 
@@ -82,6 +90,10 @@ export function defaultConfig(): BoardConfig {
     ],
     cards: {},
     commands: DEFAULT_COMMANDS,
+    newCardDefaults: {
+      command: "shell",
+      worktree: false,
+    },
     idleTimeoutMs: 3000,
   };
 }

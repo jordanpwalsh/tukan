@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { TmuxServer } from "./types.js";
+import { buildAgentCommandTemplate, type AgentLaunchPlan } from "../agent/conversation.js";
 
 export function sanitizeBranchName(name: string): string {
   return name
@@ -29,9 +30,11 @@ export interface NewWindowOpts {
   sessionName: string;
   name: string;
   dir: string;
+  commandId?: string;
   commandTemplate: string;
   description?: string;
   acceptanceCriteria?: string;
+  agentLaunchPlan?: AgentLaunchPlan;
 }
 
 export function shouldCreateNewSession(tmux: TmuxServer, sessionName: string): boolean {
@@ -84,9 +87,12 @@ function appendCommand(args: string[], opts: NewWindowOpts): void {
   appendEnvVars(args, opts);
   if (opts.commandTemplate) {
     const prompt = buildPrompt(opts.description, opts.acceptanceCriteria);
+    const commandTemplate = opts.agentLaunchPlan
+      ? buildAgentCommandTemplate(opts.commandTemplate, opts.agentLaunchPlan)
+      : opts.commandTemplate;
     // Wrap commands so a shell remains after they exit.
     // Pass the card prompt as a positional arg via "$@".
-    args.push("sh", "-c", opts.commandTemplate + ' "$@"; exec "${SHELL:-sh}"', "--", ...(prompt ? [prompt] : []));
+    args.push("sh", "-c", commandTemplate + ' "$@"; exec "${SHELL:-sh}"', "--", ...(prompt ? [prompt] : []));
   }
   // shell mode (empty template): always open a plain shell.
   // Description commands are sent via send-keys after window creation.

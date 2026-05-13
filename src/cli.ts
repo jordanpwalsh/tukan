@@ -15,6 +15,7 @@ import { detectServerName } from "./index.js";
 import {
   createCard,
   addCardToConfig,
+  getNewCardDefaults,
   removeCardFromConfig,
   resolveCard,
   resolveCardAcrossSessions,
@@ -23,6 +24,7 @@ import {
   resolveCardInConfig,
   moveCardToColumn,
   editCardInConfig,
+  updateNewCardDefaults,
   columnIdFromName,
   columnNameFromId,
   nextColumnId,
@@ -32,6 +34,7 @@ import { resolveSessionConnectArgs } from "./tmux/switch.js";
 import type { BoardConfig, Card } from "./board/types.js";
 import type { SessionState } from "./state/types.js";
 import { buildResolveSteps, runResolveWorkflow, type ResolveStep } from "./worktree/resolve.js";
+import { detectNewCodexSessionId, listCodexSessionIds, planAgentLaunch } from "./agent/conversation.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -317,17 +320,21 @@ export function createProgram(): Command {
     .option("-s, --session <name>", "Session name")
     .action(async (name: string, opts: Record<string, string | boolean | undefined>) => {
       const ctx = await loadContext(opts.session as string | undefined);
+      const defaults = getNewCardDefaults(ctx.config, ctx.workingDir);
+      const dir = opts.dir as string | undefined ?? defaults.dir;
+      const command = opts.command as string | undefined ?? defaults.command;
+      const worktree = opts.worktree as boolean | undefined ?? defaults.worktree;
       const card = createCard({
         name,
         description: opts.description as string | undefined,
         acceptanceCriteria: opts.ac as string | undefined,
-        dir: opts.dir as string | undefined ?? ctx.workingDir,
-        command: opts.command as string | undefined,
-        worktree: opts.worktree as boolean | undefined,
+        dir,
+        command,
+        worktree,
         worktreePath: opts.worktreePath as string | undefined,
         sessionName: ctx.sessionName,
       });
-      const newConfig = addCardToConfig(ctx.config, card);
+      const newConfig = addCardToConfig(updateNewCardDefaults(ctx.config, { dir, command, worktree }), card);
       await saveConfig(ctx, newConfig);
       console.log(`Created card "${card.name}" (${card.id.slice(0, 8)})`);
     });
@@ -369,14 +376,21 @@ export function createProgram(): Command {
       const commands = ctx.config.commands ?? DEFAULT_COMMANDS;
       const cmdDef = commands.find((c) => c.id === card.command);
       const commandTemplate = cmdDef?.template ?? "";
+      const agentLaunchPlan = planAgentLaunch(card, commandTemplate);
+      const knownCodexSessionIds = agentLaunchPlan.cli === "codex" && !agentLaunchPlan.sessionId
+        ? await listCodexSessionIds()
+        : undefined;
+      const launchStartedAt = Date.now();
 
       const windowOpts = {
         sessionName: card.sessionName || ctx.sessionName,
         name: sanitizeBranchName(card.name),
         dir,
+        commandId: card.command,
         commandTemplate,
         description: card.description,
         acceptanceCriteria: card.acceptanceCriteria,
+        agentLaunchPlan,
       };
 
       // Fetch unfiltered tmux state to check if target session exists
@@ -395,7 +409,20 @@ export function createProgram(): Command {
         }
       }
 
-      const newConfig = markCardStarted(ctx.config, id, newWindowId);
+      const startedConfig = markCardStarted(ctx.config, id, newWindowId);
+      const agentSessionId = agentLaunchPlan.sessionId
+        ?? (knownCodexSessionIds
+          ? await detectNewCodexSessionId(dir, knownCodexSessionIds, launchStartedAt)
+          : card.agentSessionId);
+      const newConfig = agentSessionId
+        ? {
+            ...startedConfig,
+            cards: {
+              ...startedConfig.cards,
+              [id]: { ...startedConfig.cards[id], agentSessionId },
+            },
+          }
+        : startedConfig;
       await saveConfig(ctx, newConfig);
 
       // Output start confirmation (--wait --json defers to watchCardPane's start event)

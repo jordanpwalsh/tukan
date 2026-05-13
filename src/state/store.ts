@@ -156,7 +156,7 @@ export function migrateConfig(raw: Record<string, unknown>): BoardConfig {
   // Already migrated
   if (raw.cards && typeof raw.cards === "object" && !Array.isArray(raw.cards) && !raw.assignments) {
     const config = raw as unknown as Omit<BoardConfig, "commands"> & { commands?: BoardConfig["commands"] };
-    return ensureCommands(ensureDoneColumn({ ...config, commands: config.commands ?? DEFAULT_COMMANDS }));
+    return ensureNewCardDefaults(ensureCommands(ensureDoneColumn({ ...config, commands: config.commands ?? DEFAULT_COMMANDS })));
   }
 
   const columns = (raw.columns ?? []) as BoardConfig["columns"];
@@ -217,7 +217,7 @@ export function migrateConfig(raw: Record<string, unknown>): BoardConfig {
     };
   }
 
-  return ensureCommands(ensureDoneColumn({ columns, cards, commands: DEFAULT_COMMANDS }));
+  return ensureNewCardDefaults(ensureCommands(ensureDoneColumn({ columns, cards, commands: DEFAULT_COMMANDS })));
 }
 
 /** Ensure the Done column exists (for configs created before it was added). */
@@ -261,6 +261,29 @@ function ensureCommands(config: BoardConfig): BoardConfig {
     return { ...config, commands, cards };
   }
   return config;
+}
+
+function ensureNewCardDefaults(config: BoardConfig): BoardConfig {
+  const command = config.newCardDefaults?.command ?? config.commands[0]?.id ?? "shell";
+  const worktree = config.newCardDefaults?.worktree ?? false;
+  const dir = config.newCardDefaults?.dir;
+
+  if (
+    config.newCardDefaults?.command === command
+    && config.newCardDefaults?.worktree === worktree
+    && config.newCardDefaults?.dir === dir
+  ) {
+    return config;
+  }
+
+  return {
+    ...config,
+    newCardDefaults: {
+      ...(dir ? { dir } : {}),
+      command,
+      worktree,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

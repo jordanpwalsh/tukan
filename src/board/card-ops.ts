@@ -203,6 +203,12 @@ export interface EditCardFields {
   worktreePath?: string;
 }
 
+export interface ResolvedNewCardDefaults {
+  dir: string;
+  command: string;
+  worktree: boolean;
+}
+
 /** Remove a card from a config, returning a new config. */
 export function removeCardFromConfig(config: BoardConfig, cardId: string): BoardConfig {
   const { [cardId]: _, ...rest } = config.cards;
@@ -219,6 +225,9 @@ export function editCardInConfig(config: BoardConfig, cardId: string, fields: Ed
   if (fields.acceptanceCriteria !== undefined) updated.acceptanceCriteria = fields.acceptanceCriteria;
   if (fields.dir !== undefined) updated.dir = fields.dir;
   if (fields.command !== undefined) {
+    if (fields.command !== card.command) {
+      updated.agentSessionId = undefined;
+    }
     updated.command = fields.command;
     updated.customCommand = fields.customCommand;
   }
@@ -227,6 +236,41 @@ export function editCardInConfig(config: BoardConfig, cardId: string, fields: Ed
     updated.worktreePath = fields.worktree ? fields.worktreePath : undefined;
   }
   return { ...config, cards: { ...config.cards, [cardId]: updated } };
+}
+
+export function getNewCardDefaults(config: BoardConfig, workingDir: string): ResolvedNewCardDefaults {
+  const commands = config.commands.length > 0 ? config.commands : [{ id: "shell", label: "Shell", template: "" }];
+  const command = config.newCardDefaults?.command;
+  const hasCommand = command && commands.some((candidate) => candidate.id === command);
+
+  return {
+    dir: config.newCardDefaults?.dir ?? workingDir,
+    command: hasCommand ? command! : commands[0].id,
+    worktree: config.newCardDefaults?.worktree ?? false,
+  };
+}
+
+export function updateNewCardDefaults(
+  config: BoardConfig,
+  defaults: ResolvedNewCardDefaults,
+): BoardConfig {
+  const current = getNewCardDefaults(config, defaults.dir);
+  if (
+    current.dir === defaults.dir
+    && current.command === defaults.command
+    && current.worktree === defaults.worktree
+  ) {
+    return config;
+  }
+
+  return {
+    ...config,
+    newCardDefaults: {
+      dir: defaults.dir,
+      command: defaults.command,
+      worktree: defaults.worktree,
+    },
+  };
 }
 
 const COLUMN_NAME_MAP: Record<string, string> = {
