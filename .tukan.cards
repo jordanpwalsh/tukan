@@ -876,7 +876,31 @@
       "worktree": false,
       "createdAt": 1778359619840,
       "startedAt": 1778359719323,
-      "windowId": "@0"
+      "closedAt": 1780946309413
+    },
+    "f6925857-89de-4238-a7f8-2d635c036a68": {
+      "id": "f6925857-89de-4238-a7f8-2d635c036a68",
+      "columnId": "1",
+      "name": "check list fix",
+      "description": "Make the check list items on card completetion less resemble a check box that can be checked. Maybe a - and change to a check when done.",
+      "acceptanceCriteria": "\n",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1780946353361
+    },
+    "1ba6f300-ff90-47d0-8320-4999a2c96b70": {
+      "id": "1ba6f300-ff90-47d0-8320-4999a2c96b70",
+      "columnId": "1",
+      "name": "database storage`",
+      "description": "Store cards in a database instead of local .tukan.cards.\n",
+      "acceptanceCriteria": "",
+      "sessionName": "tukan",
+      "dir": "/Users/jordan/devel/personal/tukan",
+      "command": "cmd-e35a7bf0",
+      "worktree": false,
+      "createdAt": 1780954077381
     }
   },
   "commands": [
